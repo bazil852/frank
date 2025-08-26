@@ -35,7 +35,13 @@ export default function Home() {
   const [showApplyModal, setShowApplyModal] = useState(false);
 
   const updateProfile = useCallback((updates: Partial<Profile>) => {
-    setProfile((prev) => ({ ...prev, ...updates }));
+    console.log('updateProfile called with:', updates);
+    setProfile((prev) => {
+      const newProfile = { ...prev, ...updates };
+      console.log('Profile updated from:', prev);
+      console.log('Profile updated to:', newProfile);
+      return newProfile;
+    });
     setFiltering(true);
     
     // Check if we have enough information to show the matches panel
@@ -48,6 +54,8 @@ export default function Home() {
       updatedProfile.amountRequested
     ];
     const filledFields = keyFields.filter(field => field !== undefined && field !== null && field !== '').length;
+    
+    console.log(`updateProfile: ${filledFields}/4 fields filled`);
     
     // Show panel if we have 3 or 4 key fields
     if (filledFields >= 3) {
@@ -73,8 +81,11 @@ export default function Home() {
   }, []);
 
   useEffect(() => {
+    console.log('useEffect for filtering triggered with profile:', profile);
     const timer = setTimeout(async () => {
+      console.log('Running filterProducts with profile:', profile);
       const result = filterProducts(profile, PRODUCTS);
+      console.log('Filter results:', result);
       setMatches(result);
       
       const newReasons: Record<string, string[]> = {};
@@ -102,6 +113,7 @@ export default function Home() {
       
       setMatchReasons(newReasons);
       setFiltering(false);
+      console.log('Filtering completed, matches updated');
     }, 250);
 
     return () => clearTimeout(timer);
@@ -126,11 +138,13 @@ export default function Home() {
       console.log('API response data:', data);
       
       if (data.extracted && Object.keys(data.extracted).length > 0) {
-        // First update the profile
-        const updatedProfile = { ...profile, ...data.extracted };
-        setProfile(updatedProfile);
-        setFiltering(true);
+        console.log('Extracted data from API:', data.extracted);
         
+        // Use updateProfile to ensure filtering is triggered
+        updateProfile(data.extracted);
+        
+        // Get the updated profile for checking
+        const updatedProfile = { ...profile, ...data.extracted };
         console.log('Updated profile:', updatedProfile);
         console.log('Has all required fields:', {
           industry: updatedProfile.industry,
