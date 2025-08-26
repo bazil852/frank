@@ -69,10 +69,20 @@ Otherwise, provide a summary acknowledging their business needs and ask for miss
 
 STYLE: Follow the personality instructions provided. Use plain text, no markdown formatting except for **bold** when appropriate. If you need to emphasize something, use CAPS or list items with numbers/bullets naturally.
 
-Also extract any obvious business fields from their message: numbers might be ZAR amounts/turnover/days, "VAT" means vat_registered=true, common SA sectors map to industry. 
+Also extract ANY business information mentioned in the message into the extracted object. Be very thorough:
+- Industry/sector mentions (Robotics, Retail, Services, Manufacturing, etc.) -> "industry"
+- Monthly turnover/revenue amounts in Rand -> "monthlyTurnover" (as number)
+- Funding amounts needed -> "amountRequested" (as number) 
+- Years in business/trading -> "yearsTrading" (as number)
+- VAT registration status -> "vatRegistered" (as boolean)
+- Use of funds/purpose -> "useOfFunds"
+- Timeline/urgency in days -> "urgencyDays" (as number)
+- Location/province -> "province"
+
+CRITICAL: Always include ALL extracted fields in your JSON response, even if some are from previous context.
 
 IMPORTANT: Return ONLY valid JSON without markdown formatting or code blocks. Example:
-{"summary": "Lulalend is pretty flexible - R20k to R2m, just need 1 year trading and R50k monthly turnover. How much do you need?", "extracted": {"industry": "Retail", "amountRequested": 500000}}`;
+{"summary": "Got it! I can see you're in robotics with R50k monthly turnover, need R100k funding. Let me find your matches!", "extracted": {"industry": "Robotics", "monthlyTurnover": 50000, "amountRequested": 100000, "yearsTrading": 4, "vatRegistered": false, "useOfFunds": "To scale your business", "urgencyDays": 30, "province": "Western Cape"}}`;
     }
 
     console.log('Sending to OpenAI with prompt:', prompt);
@@ -137,6 +147,38 @@ IMPORTANT: Return ONLY valid JSON without markdown formatting or code blocks. Ex
 function parseExtracted(extracted: any, message: string): Partial<Profile> {
   const result: Partial<Profile> = {};
   
+  // Special case: if the message contains detailed business summary, extract from it
+  const messageLower = message.toLowerCase();
+  if (messageLower.includes('industry:') || messageLower.includes('years in business:') || messageLower.includes('monthly turnover:')) {
+    // Parse structured information from the message itself
+    const industryMatch = message.match(/industry:\s*([^\n•]+)/i);
+    if (industryMatch) result.industry = industryMatch[1].trim();
+    
+    const yearsMatch = message.match(/years in business:\s*(\d+)/i);
+    if (yearsMatch) result.yearsTrading = parseInt(yearsMatch[1]);
+    
+    const turnoverMatch = message.match(/monthly turnover:\s*R(\d{1,3}(?:,\d{3})*)/i);
+    if (turnoverMatch) result.monthlyTurnover = parseInt(turnoverMatch[1].replace(/,/g, ''));
+    
+    const amountMatch = message.match(/funding amount needed:\s*R(\d{1,3}(?:,\d{3})*)/i);
+    if (amountMatch) result.amountRequested = parseInt(amountMatch[1].replace(/,/g, ''));
+    
+    const vatMatch = message.match(/vat registered:\s*(yes|no)/i);
+    if (vatMatch) result.vatRegistered = vatMatch[1].toLowerCase() === 'yes';
+    
+    const purposeMatch = message.match(/purpose of funding:\s*([^\n•]+)/i);
+    if (purposeMatch) result.useOfFunds = purposeMatch[1].trim();
+    
+    const urgencyMatch = message.match(/urgency:\s*within\s*(\d+)\s*days?/i);
+    if (urgencyMatch) result.urgencyDays = parseInt(urgencyMatch[1]);
+    
+    const provinceMatch = message.match(/province:\s*([^\n•,]+)/i);
+    if (provinceMatch) result.province = provinceMatch[1].trim();
+    
+    console.log('Extracted from structured message:', result);
+    return result;
+  }
+  
   // First, use the GPT extracted values
   if (extracted) {
     // Ensure proper type conversion for numeric fields
@@ -176,15 +218,45 @@ function parseExtracted(extracted: any, message: string): Partial<Profile> {
   
   // Then try to extract from the message if GPT didn't catch it
   if (!result.amountRequested || !result.monthlyTurnover) {
-    const amountMatch = message.match(/R?\s*(\d+)k|\b(\d{4,})\b/i);
-    if (amountMatch) {
-      const amount = amountMatch[1] ? parseInt(amountMatch[1]) * 1000 : parseInt(amountMatch[2]);
-      if (amount > 10000 && amount < 100000000) {
-        if (!result.amountRequested && (message.toLowerCase().includes('need') || message.toLowerCase().includes('loan') || message.toLowerCase().includes('finance'))) {
-          result.amountRequested = amount;
-        } else if (!result.monthlyTurnover && (message.toLowerCase().includes('turnover') || message.toLowerCase().includes('revenue'))) {
+    // Look for multiple amounts in the message
+    const amountMatches = Array.from(message.matchAll(/R\s*(\d{1,3}(?:,\d{3})*|\d+)k?/gi));
+    
+    for (const match of amountMatches) {
+      const rawAmount = match[1].replace(/,/g, '');
+      const amount = match[0].includes('k') ? parseInt(rawAmount) * 1000 : parseInt(rawAmount);
+      
+      if (amount > 1000 && amount < 100000000) {
+        // Get context around the amount
+        const index = match.index || 0;
+        const contextBefore = message.slice(Math.max(0, index - 50), index).toLowerCase();
+        const contextAfter = message.slice(index, Math.min(message.length, index + 50)).toLowerCase();
+        const fullContext = contextBefore + contextAfter;
+        
+        // Determine what this amount represents
+        if (!result.monthlyTurnover && (fullContext.includes('turnover') || fullContext.includes('revenue') || fullContext.includes('monthly'))) {
           result.monthlyTurnover = amount;
+        } else if (!result.amountRequested && (fullContext.includes('need') || fullContext.includes('loan') || fullContext.includes('funding') || fullContext.includes('finance'))) {
+          result.amountRequested = amount;
         }
+      }
+    }
+  }
+
+  // Extract industry from common patterns
+  if (!result.industry) {
+    const industryPatterns = [
+      'robotics', 'retail', 'services', 'manufacturing', 'hospitality', 'logistics', 
+      'construction', 'technology', 'tech', 'healthcare', 'education', 'consulting',
+      'agriculture', 'automotive', 'finance', 'insurance', 'property', 'transport'
+    ];
+    
+    const messageLower = message.toLowerCase();
+    for (const pattern of industryPatterns) {
+      if (messageLower.includes(pattern)) {
+        // Capitalize first letter
+        result.industry = pattern.charAt(0).toUpperCase() + pattern.slice(1);
+        if (pattern === 'tech') result.industry = 'Technology';
+        break;
       }
     }
   }
@@ -198,15 +270,6 @@ function parseExtracted(extracted: any, message: string): Partial<Profile> {
 
   if (!result.vatRegistered && message.toLowerCase().includes('vat')) {
     result.vatRegistered = true;
-  }
-
-  if (!result.industry) {
-    const industries = ['Retail', 'Services', 'Manufacturing', 'Hospitality', 'Logistics'];
-    industries.forEach(industry => {
-      if (message.toLowerCase().includes(industry.toLowerCase())) {
-        result.industry = industry;
-      }
-    });
   }
 
   if (!result.yearsTrading) {
