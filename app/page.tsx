@@ -120,21 +120,41 @@ export default function Home() {
       console.log('API response data:', data);
       
       if (data.extracted && Object.keys(data.extracted).length > 0) {
-        updateProfile(data.extracted);
+        // First update the profile
+        const updatedProfile = { ...profile, ...data.extracted };
+        setProfile(updatedProfile);
+        setFiltering(true);
+        
+        console.log('Updated profile:', updatedProfile);
+        console.log('Has all required fields:', {
+          industry: updatedProfile.industry,
+          yearsTrading: updatedProfile.yearsTrading,
+          monthlyTurnover: updatedProfile.monthlyTurnover,
+          amountRequested: updatedProfile.amountRequested
+        });
         
         // Check if we now have complete information after this update
-        const updatedProfile = { ...profile, ...data.extracted };
         if (updatedProfile.industry && 
             updatedProfile.yearsTrading && 
             updatedProfile.monthlyTurnover && 
-            updatedProfile.amountRequested &&
-            !hasUserInput) {
-          // Add a slight delay for smooth animation
-          setTimeout(() => {
-            setHasUserInput(true);
-          }, 100);
-          setIsProcessing(false);
-          return 'Perfect! I have all the essential information. Your funding matches are now appearing on the right. Feel free to tell me more to refine your results.';
+            updatedProfile.amountRequested) {
+          
+          console.log('All required fields present! Setting hasUserInput to true');
+          
+          // Check if this is the first time we have complete info
+          const wasIncomplete = !profile.industry || !profile.yearsTrading || 
+                               !profile.monthlyTurnover || !profile.amountRequested;
+          
+          if (!hasUserInput || wasIncomplete) {
+            // Add a slight delay for smooth animation
+            setTimeout(() => {
+              setHasUserInput(true);
+            }, 100);
+            setIsProcessing(false);
+            return 'Perfect! I have all the essential information. Your funding matches are now appearing on the right. Feel free to tell me more to refine your results.';
+          }
+        } else {
+          console.log('Still missing required fields');
         }
       }
       

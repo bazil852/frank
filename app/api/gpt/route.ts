@@ -108,9 +108,11 @@ IMPORTANT: Return ONLY valid JSON without markdown formatting or code blocks. Ex
         }
         
         const parsed = JSON.parse(cleanResponse);
+        const extractedData = parseExtracted(parsed.extracted || {}, message);
+        console.log('Extracted data being returned:', extractedData);
         return NextResponse.json({
           summary: parsed.summary || 'Got it — I\'ll tune your matches based on your needs',
-          extracted: parseExtracted(parsed.extracted || {}, message)
+          extracted: extractedData
         });
       } catch (error) {
         console.error('Failed to parse GPT response:', error);
@@ -133,40 +135,87 @@ IMPORTANT: Return ONLY valid JSON without markdown formatting or code blocks. Ex
 }
 
 function parseExtracted(extracted: any, message: string): Partial<Profile> {
-  const result: Partial<Profile> = { ...extracted };
+  const result: Partial<Profile> = {};
   
-  const amountMatch = message.match(/R?\s*(\d+)k|\b(\d{4,})\b/i);
-  if (amountMatch) {
-    const amount = amountMatch[1] ? parseInt(amountMatch[1]) * 1000 : parseInt(amountMatch[2]);
-    if (amount > 10000 && amount < 100000000) {
-      if (message.toLowerCase().includes('need') || message.toLowerCase().includes('loan') || message.toLowerCase().includes('finance')) {
-        result.amountRequested = amount;
-      } else if (message.toLowerCase().includes('turnover') || message.toLowerCase().includes('revenue')) {
-        result.monthlyTurnover = amount;
+  // First, use the GPT extracted values
+  if (extracted) {
+    // Ensure proper type conversion for numeric fields
+    if (extracted.amountRequested) {
+      result.amountRequested = typeof extracted.amountRequested === 'string' 
+        ? parseInt(extracted.amountRequested.replace(/[^0-9]/g, ''))
+        : extracted.amountRequested;
+    }
+    if (extracted.monthlyTurnover) {
+      result.monthlyTurnover = typeof extracted.monthlyTurnover === 'string' 
+        ? parseInt(extracted.monthlyTurnover.replace(/[^0-9]/g, ''))
+        : extracted.monthlyTurnover;
+    }
+    if (extracted.yearsTrading) {
+      result.yearsTrading = typeof extracted.yearsTrading === 'string' 
+        ? parseInt(extracted.yearsTrading)
+        : extracted.yearsTrading;
+    }
+    if (extracted.urgencyDays) {
+      result.urgencyDays = typeof extracted.urgencyDays === 'string' 
+        ? parseInt(extracted.urgencyDays)
+        : extracted.urgencyDays;
+    }
+    if (extracted.industry) {
+      result.industry = extracted.industry;
+    }
+    if (extracted.vatRegistered !== undefined) {
+      result.vatRegistered = extracted.vatRegistered;
+    }
+    if (extracted.useOfFunds) {
+      result.useOfFunds = extracted.useOfFunds;
+    }
+    if (extracted.province) {
+      result.province = extracted.province;
+    }
+  }
+  
+  // Then try to extract from the message if GPT didn't catch it
+  if (!result.amountRequested || !result.monthlyTurnover) {
+    const amountMatch = message.match(/R?\s*(\d+)k|\b(\d{4,})\b/i);
+    if (amountMatch) {
+      const amount = amountMatch[1] ? parseInt(amountMatch[1]) * 1000 : parseInt(amountMatch[2]);
+      if (amount > 10000 && amount < 100000000) {
+        if (!result.amountRequested && (message.toLowerCase().includes('need') || message.toLowerCase().includes('loan') || message.toLowerCase().includes('finance'))) {
+          result.amountRequested = amount;
+        } else if (!result.monthlyTurnover && (message.toLowerCase().includes('turnover') || message.toLowerCase().includes('revenue'))) {
+          result.monthlyTurnover = amount;
+        }
       }
     }
   }
 
-  const daysMatch = message.match(/(\d+)\s*days?/i);
-  if (daysMatch) {
-    result.urgencyDays = parseInt(daysMatch[1]);
+  if (!result.urgencyDays) {
+    const daysMatch = message.match(/(\d+)\s*days?/i);
+    if (daysMatch) {
+      result.urgencyDays = parseInt(daysMatch[1]);
+    }
   }
 
-  if (message.toLowerCase().includes('vat')) {
+  if (!result.vatRegistered && message.toLowerCase().includes('vat')) {
     result.vatRegistered = true;
   }
 
-  const industries = ['Retail', 'Services', 'Manufacturing', 'Hospitality', 'Logistics'];
-  industries.forEach(industry => {
-    if (message.toLowerCase().includes(industry.toLowerCase())) {
-      result.industry = industry;
-    }
-  });
-
-  const yearsMatch = message.match(/(\d+)\s*years?/i);
-  if (yearsMatch) {
-    result.yearsTrading = parseInt(yearsMatch[1]);
+  if (!result.industry) {
+    const industries = ['Retail', 'Services', 'Manufacturing', 'Hospitality', 'Logistics'];
+    industries.forEach(industry => {
+      if (message.toLowerCase().includes(industry.toLowerCase())) {
+        result.industry = industry;
+      }
+    });
   }
 
+  if (!result.yearsTrading) {
+    const yearsMatch = message.match(/(\d+)\s*years?/i);
+    if (yearsMatch) {
+      result.yearsTrading = parseInt(yearsMatch[1]);
+    }
+  }
+
+  console.log('Final parsed extracted data:', result);
   return result;
 }
