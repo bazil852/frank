@@ -65,11 +65,11 @@ export default function PersonalityModal({ isOpen, onClose, currentPersonality, 
             initial={{ opacity: 0, scale: 0.95 }}
             animate={{ opacity: 1, scale: 1 }}
             exit={{ opacity: 0, scale: 0.95 }}
-            className="fixed inset-0 z-50 flex items-center justify-center p-4"
+            className="fixed inset-0 z-50 flex items-center justify-center p-4 sm:p-6"
             onClick={onClose}
           >
             <div
-              className="bg-white rounded-2xl shadow-xl max-w-2xl w-full max-h-[80vh] overflow-hidden"
+              className="bg-white rounded-2xl shadow-xl max-w-2xl w-full max-h-[90vh] sm:max-h-[85vh] flex flex-col"
               onClick={(e) => e.stopPropagation()}
             >
               <div className="p-6 border-b border-gray-200">
@@ -90,7 +90,8 @@ export default function PersonalityModal({ isOpen, onClose, currentPersonality, 
                 </p>
               </div>
 
-              <div className="p-6 space-y-6 max-h-[60vh] overflow-y-auto">
+              <div className="flex-1 overflow-y-auto">
+                <div className="p-6 space-y-6">
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-3">
                     Quick Presets
@@ -134,9 +135,10 @@ export default function PersonalityModal({ isOpen, onClose, currentPersonality, 
                     <strong>Note:</strong> Frank will maintain this personality while still providing accurate funding information and following all safety guidelines.
                   </p>
                 </div>
+                </div>
               </div>
 
-              <div className="p-6 border-t border-gray-200 flex justify-end gap-3">
+              <div className="flex-shrink-0 p-6 border-t border-gray-200 flex justify-end gap-3">
                 <button
                   onClick={onClose}
                   className="px-4 py-2 text-gray-700 hover:bg-gray-100 rounded-lg transition-colors"
