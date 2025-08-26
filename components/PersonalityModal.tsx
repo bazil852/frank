@@ -90,8 +90,8 @@ export default function PersonalityModal({ isOpen, onClose, currentPersonality, 
                 </p>
               </div>
 
-              <div className="flex-1 overflow-y-auto">
-                <div className="p-6 space-y-6">
+              <div className="flex-1 overflow-y-auto min-h-0">
+                <div className="p-6 space-y-4">
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-3">
                     Quick Presets
@@ -101,7 +101,7 @@ export default function PersonalityModal({ isOpen, onClose, currentPersonality, 
                       <button
                         key={preset.label}
                         onClick={() => handlePresetSelect(preset.value)}
-                        className={`p-3 text-left rounded-lg border-2 transition-all ${
+                        className={`p-2 text-left rounded-lg border-2 transition-all ${
                           selectedPreset === preset.value
                             ? 'border-blue-600 bg-blue-50'
                             : 'border-gray-200 hover:border-gray-300 hover:bg-gray-50'
@@ -123,15 +123,15 @@ export default function PersonalityModal({ isOpen, onClose, currentPersonality, 
                     value={personality}
                     onChange={(e) => setPersonality(e.target.value)}
                     placeholder="E.g., Be friendly and conversational, use South African slang occasionally, be encouraging about their business journey, use emojis sparingly..."
-                    className="w-full p-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-600 resize-none h-32"
+                    className="w-full p-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-600 resize-none h-24"
                   />
                   <p className="text-xs text-gray-500 mt-2">
                     Tip: Be specific about tone, language style, formality level, and any unique characteristics.
                   </p>
                 </div>
 
-                <div className="bg-amber-50 border border-amber-200 rounded-lg p-4">
-                  <p className="text-sm text-amber-800">
+                <div className="bg-amber-50 border border-amber-200 rounded-lg p-3">
+                  <p className="text-xs text-amber-800">
                     <strong>Note:</strong> Frank will maintain this personality while still providing accurate funding information and following all safety guidelines.
                   </p>
                 </div>
