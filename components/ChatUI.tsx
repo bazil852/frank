@@ -35,7 +35,7 @@ export default function ChatUI({ onMessage }: ChatUIProps) {
     {
       id: '1',
       type: 'bot',
-      content: 'Hi, I\'m Frank. I\'ll match you to real South African funding options.\n\nTo find your best matches, I need to know:\n\n**Essential information:**\n- Your industry\n- Years in business\n- Monthly turnover (R)\n- How much funding you need (R)\n\n**Also helpful:**\n- VAT registration status\n- What you need the funding for\n- How urgently you need it\n- Your province\n\nOnce I have the essential details, I\'ll show you live funding matches on the right.',
+      content: 'Hi, I\'m Frank. I\'ll match you to real South African funding options.\n\n**Key information I need (at least 3 of these):**\n- Your industry\n- Years in business\n- Monthly turnover (R)\n- How much funding you need (R)\n\n**Also helpful:**\n- VAT registration status\n- What you need the funding for\n- How urgently you need it\n- Your province\n\nOnce I have enough details (3+ key items), I\'ll show you live funding matches on the right.',
       timestamp: new Date(),
     },
   ]);

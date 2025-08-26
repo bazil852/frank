@@ -38,13 +38,19 @@ export default function Home() {
     setProfile((prev) => ({ ...prev, ...updates }));
     setFiltering(true);
     
-    // Check if we have complete information to show the matches panel
+    // Check if we have enough information to show the matches panel
     const updatedProfile = { ...profile, ...updates };
-    // Require at least: industry, years trading, monthly turnover, and amount requested
-    if (updatedProfile.industry && 
-        updatedProfile.yearsTrading && 
-        updatedProfile.monthlyTurnover && 
-        updatedProfile.amountRequested) {
+    // Count how many key fields we have
+    const keyFields = [
+      updatedProfile.industry, 
+      updatedProfile.yearsTrading, 
+      updatedProfile.monthlyTurnover, 
+      updatedProfile.amountRequested
+    ];
+    const filledFields = keyFields.filter(field => field !== undefined && field !== null && field !== '').length;
+    
+    // Show panel if we have 3 or 4 key fields
+    if (filledFields >= 3) {
       setHasUserInput(true);
     }
   }, [profile]);
@@ -133,28 +139,43 @@ export default function Home() {
           amountRequested: updatedProfile.amountRequested
         });
         
-        // Check if we now have complete information after this update
-        if (updatedProfile.industry && 
-            updatedProfile.yearsTrading && 
-            updatedProfile.monthlyTurnover && 
-            updatedProfile.amountRequested) {
+        // Check if we now have enough information after this update
+        const keyFields = [
+          updatedProfile.industry, 
+          updatedProfile.yearsTrading, 
+          updatedProfile.monthlyTurnover, 
+          updatedProfile.amountRequested
+        ];
+        const filledFields = keyFields.filter(field => field !== undefined && field !== null && field !== '').length;
+        
+        console.log(`Have ${filledFields}/4 key fields:`, {
+          industry: updatedProfile.industry,
+          yearsTrading: updatedProfile.yearsTrading,
+          monthlyTurnover: updatedProfile.monthlyTurnover,
+          amountRequested: updatedProfile.amountRequested
+        });
+        
+        if (filledFields >= 3) {
+          console.log('Have enough fields (3+)! Setting hasUserInput to true');
           
-          console.log('All required fields present! Setting hasUserInput to true');
+          // Check if this is the first time we have enough info
+          const previousFields = [profile.industry, profile.yearsTrading, profile.monthlyTurnover, profile.amountRequested];
+          const previousFilledCount = previousFields.filter(field => field !== undefined && field !== null && field !== '').length;
           
-          // Check if this is the first time we have complete info
-          const wasIncomplete = !profile.industry || !profile.yearsTrading || 
-                               !profile.monthlyTurnover || !profile.amountRequested;
-          
-          if (!hasUserInput || wasIncomplete) {
+          if (!hasUserInput || previousFilledCount < 3) {
             // Add a slight delay for smooth animation
             setTimeout(() => {
               setHasUserInput(true);
             }, 100);
             setIsProcessing(false);
-            return 'Perfect! I have all the essential information. Your funding matches are now appearing on the right. Feel free to tell me more to refine your results.';
+            if (filledFields === 4) {
+              return 'Perfect! I have all the essential information. Your funding matches are now appearing on the right. Feel free to tell me more to refine your results.';
+            } else {
+              return 'Great! I have enough information to show you some matches. Your funding options are now appearing on the right. Share any missing details to get better matches.';
+            }
           }
         } else {
-          console.log('Still missing required fields');
+          console.log(`Still need more fields (have ${filledFields}/4, need 3+)`);
         }
       }
       
@@ -252,10 +273,23 @@ export default function Home() {
                     </div>
                   </div>
                   <div className="text-center">
-                    <div className="text-3xl font-bold text-blue-600">
+                    <div className={`text-3xl font-bold transition-colors ${
+                      [profile.industry, profile.yearsTrading, profile.monthlyTurnover, profile.amountRequested].filter(Boolean).length >= 3 
+                        ? 'text-green-600' 
+                        : 'text-blue-600'
+                    }`}>
                       {[profile.industry, profile.yearsTrading, profile.monthlyTurnover, profile.amountRequested].filter(Boolean).length}/4
                     </div>
-                    <p className="text-xs text-blue-600 mt-1">Required</p>
+                    <p className={`text-xs mt-1 transition-colors ${
+                      [profile.industry, profile.yearsTrading, profile.monthlyTurnover, profile.amountRequested].filter(Boolean).length >= 3 
+                        ? 'text-green-600' 
+                        : 'text-blue-600'
+                    }`}>
+                      {[profile.industry, profile.yearsTrading, profile.monthlyTurnover, profile.amountRequested].filter(Boolean).length >= 3 
+                        ? 'Ready!' 
+                        : 'Need 3+'
+                      }
+                    </p>
                   </div>
                 </div>
               </div>
