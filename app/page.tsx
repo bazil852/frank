@@ -20,6 +20,7 @@ export default function Home() {
   const [profile, setProfile] = useState<Profile>({});
   const [activeTab, setActiveTab] = useState<'available' | 'filtered' | 'close'>('available');
   const [filtering, setFiltering] = useState(false);
+  const [isProcessing, setIsProcessing] = useState(false);
   const [matches, setMatches] = useState<{ 
     available: Product[]; 
     filtered: Array<{ product: Product; reasons: string[] }>; 
@@ -37,9 +38,13 @@ export default function Home() {
     setProfile((prev) => ({ ...prev, ...updates }));
     setFiltering(true);
     
-    // Check if we have meaningful input to show the matches panel
+    // Check if we have complete information to show the matches panel
     const updatedProfile = { ...profile, ...updates };
-    if (updatedProfile.amountRequested || updatedProfile.industry || updatedProfile.monthlyTurnover) {
+    // Require at least: industry, years trading, monthly turnover, and amount requested
+    if (updatedProfile.industry && 
+        updatedProfile.yearsTrading && 
+        updatedProfile.monthlyTurnover && 
+        updatedProfile.amountRequested) {
       setHasUserInput(true);
     }
   }, [profile]);
@@ -96,13 +101,15 @@ export default function Home() {
     return () => clearTimeout(timer);
   }, [profile, fetchProductReasons]);
 
-  const handleChatMessage = async (message: string, chatHistory?: Array<{role: string, content: string}>): Promise<string> => {
+  const handleChatMessage = async (message: string, chatHistory?: Array<{role: string, content: string}>, personality?: string): Promise<string> => {
     try {
       console.log('Sending chat message to API:', message);
+      setIsProcessing(true);
+      
       const response = await fetch('/api/gpt', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ message, profile, chatHistory }),
+        body: JSON.stringify({ message, profile, chatHistory, personality }),
       });
       
       if (!response.ok) {
@@ -114,11 +121,28 @@ export default function Home() {
       
       if (data.extracted && Object.keys(data.extracted).length > 0) {
         updateProfile(data.extracted);
+        
+        // Check if we now have complete information after this update
+        const updatedProfile = { ...profile, ...data.extracted };
+        if (updatedProfile.industry && 
+            updatedProfile.yearsTrading && 
+            updatedProfile.monthlyTurnover && 
+            updatedProfile.amountRequested &&
+            !hasUserInput) {
+          // Add a slight delay for smooth animation
+          setTimeout(() => {
+            setHasUserInput(true);
+          }, 100);
+          setIsProcessing(false);
+          return 'Perfect! I have all the essential information. Your funding matches are now appearing on the right. Feel free to tell me more to refine your results.';
+        }
       }
       
+      setIsProcessing(false);
       return data.summary || 'Got it — I\'ll tune your matches based on your needs';
     } catch (error) {
       console.error('Error calling GPT API:', error);
+      setIsProcessing(false);
       return 'Got it — I\'ll tune your matches based on your needs';
     }
   };
@@ -177,6 +201,44 @@ export default function Home() {
           }`}>
             {mode === 'form' && (
               <ModeToggle mode={mode} onModeChange={setMode} />
+            )}
+
+            {mode === 'chat' && !hasUserInput && (
+              <div className="bg-blue-50 rounded-xl p-4 border border-blue-200">
+                <div className="flex items-center justify-between">
+                  <div className="flex-1">
+                    <p className="text-sm font-medium text-blue-900">Information Progress</p>
+                    <div className="mt-2 space-y-1">
+                      <div className="text-xs text-blue-700">
+                        <span className={profile.industry ? 'text-green-600 font-medium' : ''}>
+                          {profile.industry ? '✓' : '○'} Industry
+                        </span>
+                      </div>
+                      <div className="text-xs text-blue-700">
+                        <span className={profile.yearsTrading ? 'text-green-600 font-medium' : ''}>
+                          {profile.yearsTrading ? '✓' : '○'} Years Trading
+                        </span>
+                      </div>
+                      <div className="text-xs text-blue-700">
+                        <span className={profile.monthlyTurnover ? 'text-green-600 font-medium' : ''}>
+                          {profile.monthlyTurnover ? '✓' : '○'} Monthly Turnover
+                        </span>
+                      </div>
+                      <div className="text-xs text-blue-700">
+                        <span className={profile.amountRequested ? 'text-green-600 font-medium' : ''}>
+                          {profile.amountRequested ? '✓' : '○'} Amount Requested
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+                  <div className="text-center">
+                    <div className="text-3xl font-bold text-blue-600">
+                      {[profile.industry, profile.yearsTrading, profile.monthlyTurnover, profile.amountRequested].filter(Boolean).length}/4
+                    </div>
+                    <p className="text-xs text-blue-600 mt-1">Required</p>
+                  </div>
+                </div>
+              </div>
             )}
 
             <div className="bg-white rounded-2xl shadow-sm p-6">
@@ -296,6 +358,10 @@ export default function Home() {
                 className="md:col-span-2 md:sticky md:top-8 md:h-[calc(100vh-8rem)]"
               >
                 <div className="bg-white rounded-2xl shadow-sm p-6 h-full flex flex-col">
+                  <div className="mb-4">
+                    <h2 className="text-lg font-semibold text-gray-900">Your Funding Matches</h2>
+                    <p className="text-sm text-gray-500">Live results based on your requirements</p>
+                  </div>
                   <MatchesTabs
                     availableCount={matches.available.length}
                     filteredCount={matches.filtered.length}
@@ -306,7 +372,25 @@ export default function Home() {
 
               <div className="flex-1 overflow-y-auto mt-6">
                 <AnimatePresence mode="wait">
-                  {activeTab === 'available' ? (
+                  {isProcessing && matches.available.length === 0 ? (
+                    <motion.div
+                      key="processing"
+                      initial={{ opacity: 0 }}
+                      animate={{ opacity: 1 }}
+                      exit={{ opacity: 0 }}
+                      className="flex flex-col items-center justify-center h-full text-center"
+                    >
+                      <div className="space-y-4">
+                        <div className="flex justify-center">
+                          <div className="w-16 h-16 border-4 border-blue-600 border-t-transparent rounded-full animate-spin"></div>
+                        </div>
+                        <div>
+                          <p className="text-lg font-medium text-gray-900">Analyzing your requirements...</p>
+                          <p className="text-sm text-gray-500 mt-2">Finding the best funding matches for you</p>
+                        </div>
+                      </div>
+                    </motion.div>
+                  ) : activeTab === 'available' ? (
                     <motion.div
                       key="available"
                       initial={{ opacity: 0 }}
@@ -330,7 +414,16 @@ export default function Home() {
                         ))
                       ) : (
                         <div className="text-center py-12 text-gray-500">
-                          <p>No perfect hits yet — try lowering amount or increasing urgency window.</p>
+                          {isProcessing ? (
+                            <p>Processing your information...</p>
+                          ) : profile.amountRequested || profile.monthlyTurnover ? (
+                            <p>No perfect hits yet — try lowering amount or increasing urgency window.</p>
+                          ) : (
+                            <div className="space-y-2">
+                              <p className="font-medium">Tell me about your business</p>
+                              <p className="text-sm">I'll find the best funding matches as you share details</p>
+                            </div>
+                          )}
                         </div>
                       )}
                     </motion.div>

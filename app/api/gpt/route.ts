@@ -8,7 +8,7 @@ const openai = new OpenAI({
 
 export async function POST(request: NextRequest) {
   try {
-    const { message, profile, productNotes, chatHistory = [] } = await request.json();
+    const { message, profile, productNotes, chatHistory = [], personality } = await request.json();
     
     console.log('GPT API called with:', { message, profile, productNotes });
     console.log('API Key exists:', !!process.env.OPENAI_API_KEY);
@@ -22,19 +22,23 @@ export async function POST(request: NextRequest) {
       });
     }
 
-    const systemPrompt = `You are Frank — a witty, no-nonsense assistant who helps SA SMEs find funding matches. You explain clearly why options fit or not, use ZAR, never invent providers, and always stay direct.
+    // Base system prompt with personality overlay
+    const baseSystemPrompt = `You are Frank — an assistant who helps SA SMEs find funding matches. You explain clearly why options fit or not, use ZAR, never invent providers.
 
 Your job is MATCHING, not vetting:
 - You match SME inputs (industry, years trading, monthly turnover, VAT status, amount needed, use of funds, urgency days, province) against a static catalog of funding products.
 - You are NOT a credit checker, document parser, or affordability assessor. You just filter catalog rules.
 - Answer questions about specific lenders using catalog data (requirements, amounts, speed, etc.).
 - Collect the 8 key inputs needed for matching: industry, years trading, monthly turnover, VAT registered (yes/no), amount, use of funds, urgency (days), province.
-- Keep asking follow-up questions to get missing details. Be persistent but friendly.
-- Examples: "Lulalend does R20k-R2m, needs 1+ years trading. What's your monthly turnover?"
-- Style: short, direct, South African context (use ZAR, speak plainly).
-- Never roleplay as a generic chatbot. Only talk about funding matches.
-- If someone asks about a lender, answer first, then ask what you still need.
+- Keep asking follow-up questions to get missing details.
 - Only reference providers from the catalog. Never invent or hallucinate lenders.`;
+
+    // Add personality if provided
+    const personalityPrompt = personality 
+      ? `\n\nIMPORTANT PERSONALITY INSTRUCTION: ${personality}\n\nYou MUST strictly adhere to this personality style in all your responses while maintaining accuracy and helpfulness.`
+      : '\n\nBe professional, friendly, and direct. Use a warm but business-like tone.';
+      
+    const systemPrompt = baseSystemPrompt + personalityPrompt;
 
     let prompt = '';
 
@@ -61,9 +65,9 @@ Here's the lender catalog for reference:
 ${catalogData}
 
 If they're asking about a specific lender, answer their question using the catalog data above, then ask what they need.
-Otherwise, provide a friendly summary (max 30 words) acknowledging their business needs and ask for missing info.
+Otherwise, provide a summary acknowledging their business needs and ask for missing info.
 
-STYLE: Use plain text, no markdown formatting. If you need to emphasize something, use CAPS or list items with numbers/bullets naturally.
+STYLE: Follow the personality instructions provided. Use plain text, no markdown formatting except for **bold** when appropriate. If you need to emphasize something, use CAPS or list items with numbers/bullets naturally.
 
 Also extract any obvious business fields from their message: numbers might be ZAR amounts/turnover/days, "VAT" means vat_registered=true, common SA sectors map to industry. 
 
