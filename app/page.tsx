@@ -2,6 +2,8 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
+import Image from 'next/image';
+import { Maximize2, Minimize2, MessageSquare, X } from 'lucide-react';
 import ModeToggle from '@/components/ModeToggle';
 import Field from '@/components/Field';
 import ChipsBar from '@/components/ChipsBar';
@@ -11,16 +13,24 @@ import FilteredCard from '@/components/FilteredCard';
 import CloseMatchCard from '@/components/CloseMatchCard';
 import ApplyModal from '@/components/ApplyModal';
 import ChatUI from '@/components/ChatUI';
+import ThemeToggle from '@/components/ThemeToggle';
 import { Profile, filterProducts } from '@/lib/filters';
-import { PRODUCTS, Product } from '@/lib/catalog';
+import { Product } from '@/lib/catalog';
+import { getLendersFromDB } from '@/lib/db-lenders';
+import { useUserTracking } from '@/hooks/useUserTracking';
+import { ConversationTracker } from '@/lib/db-conversations';
+import { FrankAI } from '@/lib/openai-client';
 
 export default function Home() {
+  const { userId, sessionId, trackEvent, trackApplication } = useUserTracking();
   const [mode, setMode] = useState<'form' | 'chat'>('chat');
   const [hasUserInput, setHasUserInput] = useState(false);
   const [profile, setProfile] = useState<Profile>({});
   const [activeTab, setActiveTab] = useState<'available' | 'filtered' | 'close'>('available');
   const [filtering, setFiltering] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
+  const [products, setProducts] = useState<Product[]>([]);
+  const [loadingProducts, setLoadingProducts] = useState(true);
   const [matches, setMatches] = useState<{ 
     available: Product[]; 
     filtered: Array<{ product: Product; reasons: string[] }>; 
@@ -33,20 +43,35 @@ export default function Home() {
   const [matchReasons, setMatchReasons] = useState<Record<string, string[]>>({});
   const [selectedProduct, setSelectedProduct] = useState<Product | null>(null);
   const [showApplyModal, setShowApplyModal] = useState(false);
+  const [expandedPanel, setExpandedPanel] = useState<'none' | 'chat' | 'matches'>('none');
+  const [showMobileModal, setShowMobileModal] = useState(false);
 
-  const updateProfile = useCallback((updates: Partial<Profile>) => {
+  const updateProfile = useCallback(async (updates: Partial<Profile>) => {
     console.log('updateProfile called with:', updates);
-    setProfile((prev) => {
-      const newProfile = { ...prev, ...updates };
-      console.log('Profile updated from:', prev);
-      console.log('Profile updated to:', newProfile);
-      return newProfile;
-    });
+    
+    const updatedProfile = { ...profile, ...updates };
+    
+    // Update local state
+    setProfile(updatedProfile);
     setFiltering(true);
     
+    // Save profile updates to database for personalization
+    try {
+      await ConversationTracker.updateUserBusinessProfile(updates);
+      console.log('Profile saved to database:', updates);
+    } catch (error) {
+      console.error('Error saving profile to database:', error);
+    }
+    
+    // Track profile update event
+    trackEvent('profile_updated', {
+      updates,
+      mode,
+      userId,
+      sessionId
+    });
+    
     // Check if we have enough information to show the matches panel
-    const updatedProfile = { ...profile, ...updates };
-    // Count how many key fields we have
     const keyFields = [
       updatedProfile.industry, 
       updatedProfile.yearsTrading, 
@@ -60,33 +85,83 @@ export default function Home() {
     // Show panel if we have 3 or 4 key fields
     if (filledFields >= 3) {
       setHasUserInput(true);
+      trackEvent('matches_panel_opened', { filledFields });
     }
-  }, [profile]);
+  }, [profile, trackEvent, mode, userId, sessionId]);
 
   const fetchProductReasons = useCallback(async (product: Product, profile: Profile) => {
     try {
-      const response = await fetch('/api/gpt', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          profile,
-          productNotes: product.notes,
-        }),
-      });
-      const data = await response.json();
-      return data.rationale || 'Well-suited for your business needs';
+      const rationale = await FrankAI.getProductRationale(product, profile);
+      return rationale;
     } catch {
       return 'Well-suited for your business needs';
     }
   }, []);
 
+  // Fetch products from database on component mount
   useEffect(() => {
+    const fetchProducts = async () => {
+      try {
+        setLoadingProducts(true);
+        const dbProducts = await getLendersFromDB();
+        console.log('Fetched products from database:', dbProducts);
+        setProducts(dbProducts);
+      } catch (error) {
+        console.error('Error fetching products:', error);
+      } finally {
+        setLoadingProducts(false);
+      }
+    };
+    fetchProducts();
+  }, []);
+
+  // Load user's saved business profile on component mount
+  useEffect(() => {
+    const loadUserProfile = async () => {
+      try {
+        if (!userId) return;
+        
+        const savedProfile = await ConversationTracker.getUserBusinessProfile();
+        if (savedProfile && Object.keys(savedProfile).length > 0) {
+          console.log('Loading saved user profile:', savedProfile);
+          setProfile(prevProfile => ({
+            ...prevProfile,
+            ...savedProfile
+          }));
+          
+          // Check if we should show matches based on saved profile
+          const keyFields = [
+            savedProfile.industry, 
+            savedProfile.yearsTrading, 
+            savedProfile.monthlyTurnover, 
+            savedProfile.amountRequested
+          ];
+          const filledFields = keyFields.filter(field => field !== undefined && field !== null && field !== '').length;
+          
+          if (filledFields >= 3) {
+            setHasUserInput(true);
+          }
+        }
+      } catch (error) {
+        console.error('Error loading user profile:', error);
+      }
+    };
+
+    loadUserProfile();
+  }, [userId]);
+
+  useEffect(() => {
+    if (loadingProducts || products.length === 0) return;
+    
     console.log('useEffect for filtering triggered with profile:', profile);
     const timer = setTimeout(async () => {
       console.log('Running filterProducts with profile:', profile);
-      const result = filterProducts(profile, PRODUCTS);
+      const result = filterProducts(profile, products);
       console.log('Filter results:', result);
       setMatches(result);
+      
+      // Only fetch GPT reasons if we have meaningful profile data
+      const hasProfileData = profile.industry || profile.yearsTrading || profile.monthlyTurnover || profile.amountRequested;
       
       const newReasons: Record<string, string[]> = {};
       
@@ -103,7 +178,11 @@ export default function Home() {
           }
         }
         
-        const gptReason = await fetchProductReasons(product, profile);
+        // Only call GPT if we have profile data to work with
+        let gptReason = 'Good fit for your business needs';
+        if (hasProfileData) {
+          gptReason = await fetchProductReasons(product, profile);
+        }
         
         newReasons[product.id] = [
           ...deterministic.slice(0, 2),
@@ -117,25 +196,16 @@ export default function Home() {
     }, 250);
 
     return () => clearTimeout(timer);
-  }, [profile, fetchProductReasons]);
+  }, [profile, fetchProductReasons, products, loadingProducts]);
 
-  const handleChatMessage = async (message: string, chatHistory?: Array<{role: string, content: string}>, personality?: string): Promise<string> => {
+  const handleChatMessage = async (message: string, chatHistory?: Array<{role: 'system' | 'user' | 'assistant', content: string}>, personality?: string): Promise<string> => {
     try {
-      console.log('Sending chat message to API:', message);
+      console.log('Processing chat message:', message);
       setIsProcessing(true);
       
-      const response = await fetch('/api/gpt', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ message, profile, chatHistory, personality }),
-      });
-      
-      if (!response.ok) {
-        console.error('API response not OK:', response.status);
-      }
-      
-      const data = await response.json();
-      console.log('API response data:', data);
+      // Use frontend OpenAI client
+      const data = await FrankAI.chat(message, chatHistory || [], profile);
+      console.log('Frank AI response:', data);
       
       if (data.extracted && Object.keys(data.extracted).length > 0) {
         console.log('Extracted data from API:', data.extracted);
@@ -202,9 +272,43 @@ export default function Home() {
     }
   };
 
+  const handleChatReset = useCallback(async () => {
+    // Reset all local state
+    setProfile({});
+    setHasUserInput(false);
+    setMatches({
+      available: [],
+      filtered: [],
+      closeMatches: [],
+    });
+    setMatchReasons({});
+    setFiltering(false);
+    setIsProcessing(false);
+    
+    // Reset user's business profile while preserving anonymous identity
+    try {
+      await ConversationTracker.resetUserBusinessProfile();
+      console.log('Business profile reset while preserving user identity');
+    } catch (error) {
+      console.error('Error resetting business profile:', error);
+    }
+  }, []);
+
   const handleApply = (product: Product) => {
     setSelectedProduct(product);
     setShowApplyModal(true);
+  };
+
+  const toggleChatExpansion = () => {
+    setExpandedPanel(prev => prev === 'chat' ? 'none' : 'chat');
+  };
+
+  const toggleMatchesExpansion = () => {
+    setExpandedPanel(prev => prev === 'matches' ? 'none' : 'matches');
+  };
+
+  const toggleMobileModal = () => {
+    setShowMobileModal(prev => !prev);
   };
 
   const industries = [
@@ -237,80 +341,97 @@ export default function Home() {
   ];
 
   return (
-    <div className="min-h-screen bg-gray-50">
-      <header className="bg-white border-b border-gray-200">
-        <div className="max-w-6xl mx-auto px-4 py-4 flex items-center justify-between">
-          <h1 className="text-2xl font-bold text-blue-600">Frank</h1>
-          <span className="text-sm text-gray-500 bg-gray-100 px-3 py-1 rounded-full">
-            MVP • Demo
-          </span>
+    <div className="min-h-screen bg-slate-50 dark:bg-slate-900 transition-colors duration-200">
+      <header className="bg-white/90 dark:bg-slate-900/90 border-b border-slate-100 dark:border-slate-800 shadow-sm backdrop-blur-sm sticky top-0 z-50 transition-colors duration-200">
+        <div className="max-w-6xl mx-auto px-4 py-5 flex items-center justify-between">
+          <motion.div 
+            initial={{ opacity: 0, x: -20 }}
+            animate={{ opacity: 1, x: 0 }}
+            className="flex items-center gap-3"
+          >
+            <motion.div 
+              whileHover={{ scale: 1.05 }}
+              whileTap={{ scale: 0.95 }}
+              className="cursor-pointer"
+            >
+              <Image 
+                src="/logos/Frank_logo.png"
+                alt="Frank Logo"
+                width={40}
+                height={40}
+                className="object-contain"
+              />
+            </motion.div>
+            <motion.h1 
+              initial={{ opacity: 0, y: -10 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ delay: 0.1 }}
+              className="text-2xl font-bold text-slate-900 dark:text-slate-100 tracking-tight transition-colors duration-200"
+            >
+              rank
+            </motion.h1>
+          </motion.div>
+          <div className="flex items-center gap-4">
+            <motion.span 
+              initial={{ opacity: 0, x: 20 }}
+              animate={{ opacity: 1, x: 0 }}
+              transition={{ delay: 0.3 }}
+              className="flex items-center gap-2 text-sm text-slate-500 dark:text-slate-400 bg-slate-100 dark:bg-slate-800 px-4 py-2 rounded-2xl font-medium shadow-sm"
+            >
+              <div className="w-2 h-2 bg-brand-600 rounded-full animate-pulse"></div>
+              Beta • Demo
+            </motion.span>
+            <motion.div
+              initial={{ opacity: 0, scale: 0.8 }}
+              animate={{ opacity: 1, scale: 1 }}
+              transition={{ delay: 0.4 }}
+            >
+              <ThemeToggle />
+            </motion.div>
+          </div>
         </div>
       </header>
 
       <main className="max-w-6xl mx-auto px-4 py-8">
-        <div className={`grid grid-cols-1 gap-8 transition-all duration-500 ${
-          hasUserInput && mode === 'chat' ? 'md:grid-cols-5' : ''
+        <motion.div 
+          layout
+          transition={{ duration: 0.6, ease: "easeInOut" }}
+          className={`grid grid-cols-1 gap-8 ${
+          hasUserInput && mode === 'chat' 
+            ? expandedPanel === 'chat' 
+              ? 'md:grid-cols-1' 
+              : expandedPanel === 'matches'
+                ? 'md:grid-cols-1'
+                : 'md:grid-cols-5'
+            : ''
         }`}>
-          <div className={`space-y-6 transition-all duration-500 ${
-            hasUserInput && mode === 'chat' ? 'md:col-span-3' : 'md:col-span-5 md:max-w-4xl md:mx-auto'
+          <motion.div 
+            layout
+            animate={{
+              opacity: expandedPanel === 'matches' ? 0 : 1,
+              scale: expandedPanel === 'matches' ? 0.95 : 1
+            }}
+            transition={{ duration: 0.5, ease: "easeInOut" }}
+            className={`space-y-6 ${
+            hasUserInput && mode === 'chat' 
+              ? expandedPanel === 'matches' 
+                ? 'hidden md:hidden' 
+                : expandedPanel === 'chat'
+                  ? 'md:col-span-1 md:max-w-none'
+                  : 'md:col-span-3'
+              : 'col-span-1 md:col-span-5 md:max-w-4xl md:mx-auto'
           }`}>
             {mode === 'form' && (
               <ModeToggle mode={mode} onModeChange={setMode} />
             )}
 
-            {mode === 'chat' && !hasUserInput && (
-              <div className="bg-blue-50 rounded-xl p-4 border border-blue-200">
-                <div className="flex items-center justify-between">
-                  <div className="flex-1">
-                    <p className="text-sm font-medium text-blue-900">Information Progress</p>
-                    <div className="mt-2 space-y-1">
-                      <div className="text-xs text-blue-700">
-                        <span className={profile.industry ? 'text-green-600 font-medium' : ''}>
-                          {profile.industry ? '✓' : '○'} Industry
-                        </span>
-                      </div>
-                      <div className="text-xs text-blue-700">
-                        <span className={profile.yearsTrading ? 'text-green-600 font-medium' : ''}>
-                          {profile.yearsTrading ? '✓' : '○'} Years Trading
-                        </span>
-                      </div>
-                      <div className="text-xs text-blue-700">
-                        <span className={profile.monthlyTurnover ? 'text-green-600 font-medium' : ''}>
-                          {profile.monthlyTurnover ? '✓' : '○'} Monthly Turnover
-                        </span>
-                      </div>
-                      <div className="text-xs text-blue-700">
-                        <span className={profile.amountRequested ? 'text-green-600 font-medium' : ''}>
-                          {profile.amountRequested ? '✓' : '○'} Amount Requested
-                        </span>
-                      </div>
-                    </div>
-                  </div>
-                  <div className="text-center">
-                    <div className={`text-3xl font-bold transition-colors ${
-                      [profile.industry, profile.yearsTrading, profile.monthlyTurnover, profile.amountRequested].filter(Boolean).length >= 3 
-                        ? 'text-green-600' 
-                        : 'text-blue-600'
-                    }`}>
-                      {[profile.industry, profile.yearsTrading, profile.monthlyTurnover, profile.amountRequested].filter(Boolean).length}/4
-                    </div>
-                    <p className={`text-xs mt-1 transition-colors ${
-                      [profile.industry, profile.yearsTrading, profile.monthlyTurnover, profile.amountRequested].filter(Boolean).length >= 3 
-                        ? 'text-green-600' 
-                        : 'text-blue-600'
-                    }`}>
-                      {[profile.industry, profile.yearsTrading, profile.monthlyTurnover, profile.amountRequested].filter(Boolean).length >= 3 
-                        ? 'Ready!' 
-                        : 'Need 3+'
-                      }
-                    </p>
-                  </div>
-                </div>
-              </div>
-            )}
 
-            <div className="bg-white rounded-2xl shadow-sm p-6">
-              {mode === 'form' ? (
+            {mode === 'form' ? (
+              <motion.div 
+                layout
+                transition={{ duration: 0.3 }}
+                className="w-full bg-white dark:bg-slate-800 rounded-2xl shadow-sm border border-slate-100 dark:border-slate-700 p-6 sticky top-8 h-[calc(100vh-8rem)] flex flex-col transition-colors duration-200"
+              >
                 <div className="space-y-4">
                   <Field
                     label="Industry"
@@ -377,58 +498,113 @@ export default function Home() {
                     options={provinces}
                   />
                 </div>
-              ) : (
-                <div className={`transition-all duration-500 ${
-                  hasUserInput ? 'h-[500px]' : 'h-[700px]'
-                }`}>
-                  <ChatUI onMessage={handleChatMessage} />
-                </div>
-              )}
-            </div>
-
-            {((mode === 'form') || (mode === 'chat' && hasUserInput)) && (
-              <div className="bg-white rounded-2xl shadow-sm p-4">
-                <ChipsBar profile={profile} />
-              </div>
+              </motion.div>
+            ) : (
+              <motion.div
+                layout
+                transition={{ duration: 0.3 }}
+                className="w-full sticky top-8 h-[calc(100vh-8rem)]"
+              >
+                <ChatUI 
+                  onMessage={handleChatMessage} 
+                  onReset={handleChatReset}
+                  onToggleExpand={toggleChatExpansion}
+                  isExpanded={expandedPanel === 'chat'}
+                  showProfileProgress={!hasUserInput}
+                  profile={profile}
+                  showChips={hasUserInput}
+                  hideMobileFeatures={true}
+                />
+              </motion.div>
             )}
+
 
             <AnimatePresence>
               {filtering && (
                 <motion.div
-                  initial={{ opacity: 0 }}
-                  animate={{ opacity: 1 }}
-                  exit={{ opacity: 0 }}
-                  className="bg-white rounded-2xl shadow-sm p-4"
+                  initial={{ opacity: 0, y: 20 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0, y: -20 }}
+                  className="bg-white dark:bg-slate-800 rounded-2xl shadow-sm border border-slate-100 dark:border-slate-700 p-6 transition-colors duration-200"
                 >
-                  <div className="flex items-center gap-2">
-                    <div className="w-full bg-gray-200 rounded-full h-1 overflow-hidden">
+                  <div className="flex items-center gap-4">
+                    <div className="w-8 h-8 bg-brand-600 rounded-full flex items-center justify-center">
                       <motion.div
-                        className="h-full bg-blue-600"
-                        initial={{ width: '0%' }}
-                        animate={{ width: '100%' }}
-                        transition={{ duration: 0.5 }}
+                        animate={{ rotate: 360 }}
+                        transition={{ duration: 1, repeat: Infinity, ease: "linear" }}
+                        className="w-4 h-4 border-2 border-white border-t-transparent rounded-full"
                       />
                     </div>
-                    <span className="text-sm text-gray-500">Filtering...</span>
+                    <div className="flex-1">
+                      <p className="text-sm font-semibold text-slate-900 dark:text-slate-100 mb-2 transition-colors duration-200">Analyzing your profile</p>
+                      <div className="w-full bg-slate-200 rounded-full h-2 overflow-hidden">
+                        <motion.div
+                          className="h-full bg-brand-600 rounded-full"
+                          initial={{ width: '0%' }}
+                          animate={{ width: '100%' }}
+                          transition={{ duration: 0.8, ease: "easeInOut" }}
+                        />
+                      </div>
+                    </div>
                   </div>
                 </motion.div>
               )}
             </AnimatePresence>
-          </div>
+          </motion.div>
 
           <AnimatePresence>
             {hasUserInput && mode === 'chat' && (
               <motion.div
+                layout
                 initial={{ opacity: 0, x: 100 }}
-                animate={{ opacity: 1, x: 0 }}
-                exit={{ opacity: 0, x: 100 }}
-                transition={{ duration: 0.5, type: 'spring', stiffness: 100 }}
-                className="md:col-span-2 md:sticky md:top-8 md:h-[calc(100vh-8rem)]"
+                animate={{ 
+                  opacity: expandedPanel === 'chat' ? 0 : 1, 
+                  x: 0,
+                  scale: expandedPanel === 'chat' ? 0.95 : 1
+                }}
+                exit={{ opacity: 0, x: 100, scale: 0.95 }}
+                transition={{ 
+                  duration: 0.5, 
+                  ease: "easeInOut",
+                  layout: { duration: 0.6, ease: "easeInOut" }
+                }}
+                className={`hidden md:block ${
+                  expandedPanel === 'chat' 
+                    ? 'md:hidden' 
+                    : expandedPanel === 'matches'
+                      ? 'md:col-span-1 md:sticky md:top-8 md:h-[calc(100vh-8rem)]'
+                      : 'md:col-span-2 md:sticky md:top-8 md:h-[calc(100vh-8rem)]'
+                }`}
               >
-                <div className="bg-white rounded-2xl shadow-sm p-6 h-full flex flex-col">
-                  <div className="mb-4">
-                    <h2 className="text-lg font-semibold text-gray-900">Your Funding Matches</h2>
-                    <p className="text-sm text-gray-500">Live results based on your requirements</p>
+                <motion.div 
+                  layout
+                  transition={{ duration: 0.3 }}
+                  className="bg-white dark:bg-slate-800 rounded-2xl shadow-sm border border-slate-100 dark:border-slate-700 p-6 h-full flex flex-col transition-colors duration-200"
+                >
+                  <div className="mb-6">
+                    <div className="flex items-center justify-between mb-2">
+                      <div className="flex items-center gap-3">
+                        <div className="w-6 h-6 bg-brand-600 rounded-lg flex items-center justify-center">
+                          <span className="text-white text-sm font-bold">⚡</span>
+                        </div>
+                        <h2 className="text-xl font-bold text-slate-900 dark:text-slate-100 transition-colors duration-200">Your Matches</h2>
+                      </div>
+                      <motion.button
+                        whileHover={{ scale: 1.05, rotate: 5 }}
+                        whileTap={{ scale: 0.95 }}
+                        onClick={toggleMatchesExpansion}
+                        className="p-2 text-slate-600 hover:text-slate-900 dark:text-slate-400 dark:hover:text-slate-100 bg-slate-50 hover:bg-slate-100 dark:bg-slate-700 dark:hover:bg-slate-600 rounded-full transition-all duration-300 ease-in-out"
+                        title={expandedPanel === 'matches' ? "Minimize matches" : "Expand matches"}
+                      >
+                        <motion.div
+                          animate={{ rotate: expandedPanel === 'matches' ? 180 : 0 }}
+                          transition={{ duration: 0.3, ease: "easeInOut" }}
+                        >
+                          {expandedPanel === 'matches' ? <Minimize2 size={16} /> : <Maximize2 size={16} />}
+                        </motion.div>
+                      </motion.button>
+                    </div>
+                    <p className="text-sm text-slate-600 dark:text-slate-400 transition-colors duration-200">Live results personalized to your business</p>
                   </div>
                   <MatchesTabs
                     availableCount={matches.available.length}
@@ -436,216 +612,405 @@ export default function Home() {
                     closeMatchCount={matches.closeMatches.length}
                     activeTab={activeTab}
                     onTabChange={setActiveTab}
-              />
+                  />
 
-              <div className="flex-1 overflow-y-auto mt-6">
-                <AnimatePresence mode="wait">
-                  {isProcessing && matches.available.length === 0 ? (
-                    <motion.div
-                      key="processing"
-                      initial={{ opacity: 0 }}
-                      animate={{ opacity: 1 }}
-                      exit={{ opacity: 0 }}
-                      className="flex flex-col items-center justify-center h-full text-center"
-                    >
-                      <div className="space-y-4">
-                        <div className="flex justify-center">
-                          <div className="w-16 h-16 border-4 border-blue-600 border-t-transparent rounded-full animate-spin"></div>
-                        </div>
-                        <div>
-                          <p className="text-lg font-medium text-gray-900">Analyzing your requirements...</p>
-                          <p className="text-sm text-gray-500 mt-2">Finding the best funding matches for you</p>
-                        </div>
-                      </div>
-                    </motion.div>
-                  ) : activeTab === 'available' ? (
-                    <motion.div
-                      key="available"
-                      initial={{ opacity: 0 }}
-                      animate={{ opacity: 1 }}
-                      exit={{ opacity: 0 }}
-                      className="space-y-4"
-                    >
-                      {matches.available.length > 0 ? (
-                        matches.available.map((product, index) => (
-                          <MatchCard
-                            key={product.id}
-                            product={product}
-                            reasons={matchReasons[product.id] || [
-                              'Meets basic requirements',
-                              'Good fit for your profile',
-                              'Fast approval process'
-                            ]}
-                            onApply={() => handleApply(product)}
-                            index={index}
-                          />
-                        ))
-                      ) : (
-                        <div className="text-center py-12 text-gray-500">
-                          {isProcessing ? (
-                            <p>Processing your information...</p>
-                          ) : profile.amountRequested || profile.monthlyTurnover ? (
-                            <p>No perfect hits yet — try lowering amount or increasing urgency window.</p>
+                  <div className="flex-1 overflow-y-auto mt-6">
+                    <AnimatePresence mode="wait">
+                      {isProcessing && matches.available.length === 0 ? (
+                        <motion.div
+                          key="processing"
+                          initial={{ opacity: 0 }}
+                          animate={{ opacity: 1 }}
+                          exit={{ opacity: 0 }}
+                          className="flex flex-col items-center justify-center h-full text-center"
+                        >
+                          <div className="space-y-4">
+                            <div className="flex justify-center">
+                              <div className="w-16 h-16 border-4 border-brand-600 border-t-transparent rounded-full animate-spin"></div>
+                            </div>
+                            <div>
+                              <p className="text-lg font-semibold text-slate-900">Analyzing your requirements...</p>
+                              <p className="text-sm text-slate-600 mt-2">Finding the best funding matches for you</p>
+                            </div>
+                          </div>
+                        </motion.div>
+                      ) : activeTab === 'available' ? (
+                        <motion.div
+                          key="available"
+                          initial={{ opacity: 0 }}
+                          animate={{ opacity: 1 }}
+                          exit={{ opacity: 0 }}
+                          className="space-y-4"
+                        >
+                          {matches.available.length > 0 ? (
+                            matches.available.map((product, index) => (
+                              <MatchCard
+                                key={product.id}
+                                product={product}
+                                reasons={matchReasons[product.id] || [
+                                  'Meets basic requirements',
+                                  'Good fit for your profile',
+                                  'Fast approval process'
+                                ]}
+                                onApply={() => handleApply(product)}
+                                index={index}
+                              />
+                            ))
                           ) : (
-                            <div className="space-y-2">
-                              <p className="font-medium">Tell me about your business</p>
-                              <p className="text-sm">I'll find the best funding matches as you share details</p>
+                            <div className="text-center py-12">
+                              {isProcessing ? (
+                                <div className="space-y-3">
+                                  <div className="w-8 h-8 border-2 border-brand-600 border-t-transparent rounded-full animate-spin mx-auto"></div>
+                                  <p className="text-slate-600 font-medium">Processing your information...</p>
+                                </div>
+                              ) : profile.amountRequested || profile.monthlyTurnover ? (
+                                <div className="space-y-3">
+                                  <div className="w-12 h-12 bg-slate-100 rounded-2xl flex items-center justify-center mx-auto">
+                                    <span className="text-2xl">🔍</span>
+                                  </div>
+                                  <div>
+                                    <p className="text-slate-700 font-medium">No perfect matches yet</p>
+                                    <p className="text-sm text-slate-500 mt-1">Try adjusting your amount or timeline</p>
+                                  </div>
+                                </div>
+                              ) : (
+                                <div className="space-y-3">
+                                  <div className="w-12 h-12 bg-brand-50 rounded-2xl flex items-center justify-center mx-auto">
+                                    <span className="text-2xl">💬</span>
+                                  </div>
+                                  <div>
+                                    <p className="font-semibold text-slate-900">Tell me about your business</p>
+                                    <p className="text-sm text-slate-600 mt-1">I'll find the best funding matches as you share details</p>
+                                  </div>
+                                </div>
+                              )}
                             </div>
                           )}
-                        </div>
-                      )}
-                    </motion.div>
-                  ) : activeTab === 'close' ? (
-                    <motion.div
-                      key="close"
-                      initial={{ opacity: 0 }}
-                      animate={{ opacity: 1 }}
-                      exit={{ opacity: 0 }}
-                      className="space-y-4"
-                    >
-                      {matches.closeMatches.length > 0 ? (
-                        matches.closeMatches.map((item, index) => (
-                          <CloseMatchCard
-                            key={item.product.id}
-                            product={item.product}
-                            reasons={item.reasons}
-                            improvements={item.improvements}
-                            index={index}
-                          />
-                        ))
+                        </motion.div>
+                      ) : activeTab === 'close' ? (
+                        <motion.div
+                          key="close"
+                          initial={{ opacity: 0 }}
+                          animate={{ opacity: 1 }}
+                          exit={{ opacity: 0 }}
+                          className="space-y-4"
+                        >
+                          {matches.closeMatches.length > 0 ? (
+                            matches.closeMatches.map((item, index) => (
+                              <CloseMatchCard
+                                key={item.product.id}
+                                product={item.product}
+                                reasons={item.reasons}
+                                improvements={item.improvements}
+                                index={index}
+                              />
+                            ))
+                          ) : (
+                            <div className="text-center py-12 text-gray-500">
+                              <p>No close matches found.</p>
+                            </div>
+                          )}
+                        </motion.div>
                       ) : (
-                        <div className="text-center py-12 text-gray-500">
-                          <p>No close matches found.</p>
-                        </div>
+                        <motion.div
+                          key="filtered"
+                          initial={{ opacity: 0 }}
+                          animate={{ opacity: 1 }}
+                          exit={{ opacity: 0 }}
+                          className="space-y-4"
+                        >
+                          {matches.filtered.length > 0 ? (
+                            matches.filtered.map((item, index) => (
+                              <FilteredCard
+                                key={item.product.id}
+                                product={item.product}
+                                reasons={item.reasons}
+                                index={index}
+                              />
+                            ))
+                          ) : (
+                            <div className="text-center py-12 text-gray-500">
+                              <p>Nothing excluded yet. Nice.</p>
+                            </div>
+                          )}
+                        </motion.div>
                       )}
-                    </motion.div>
-                  ) : (
-                    <motion.div
-                      key="filtered"
-                      initial={{ opacity: 0 }}
-                      animate={{ opacity: 1 }}
-                      exit={{ opacity: 0 }}
-                      className="space-y-4"
-                    >
-                      {matches.filtered.length > 0 ? (
-                        matches.filtered.map((item, index) => (
-                          <FilteredCard
-                            key={item.product.id}
-                            product={item.product}
-                            reasons={item.reasons}
-                            index={index}
-                          />
-                        ))
-                      ) : (
-                        <div className="text-center py-12 text-gray-500">
-                          <p>Nothing excluded yet. Nice.</p>
-                        </div>
-                      )}
-                    </motion.div>
-                  )}
-                </AnimatePresence>
+                    </AnimatePresence>
+                  </div>
+                </motion.div>
+              </motion.div>
+            )}
+          </AnimatePresence>
+          
+          {mode === 'form' && (
+            <div className="md:col-span-3 md:sticky md:top-8 md:h-[calc(100vh-8rem)]">
+              <div className="bg-white dark:bg-slate-800 rounded-2xl shadow-sm border border-slate-100 dark:border-slate-700 p-6 h-full flex flex-col transition-colors duration-200">
+                <MatchesTabs
+                  availableCount={matches.available.length}
+                  filteredCount={matches.filtered.length}
+                  closeMatchCount={matches.closeMatches.length}
+                  activeTab={activeTab}
+                  onTabChange={setActiveTab}
+                />
+
+                <div className="flex-1 overflow-y-auto mt-6">
+                  <AnimatePresence mode="wait">
+                    {activeTab === 'available' ? (
+                      <motion.div
+                        key="available"
+                        initial={{ opacity: 0 }}
+                        animate={{ opacity: 1 }}
+                        exit={{ opacity: 0 }}
+                        className="space-y-4"
+                      >
+                        {matches.available.length > 0 ? (
+                          matches.available.map((product, index) => (
+                            <MatchCard
+                              key={product.id}
+                              product={product}
+                              reasons={matchReasons[product.id] || [
+                                'Meets basic requirements',
+                                'Good fit for your profile',
+                                'Fast approval process'
+                              ]}
+                              onApply={() => handleApply(product)}
+                              index={index}
+                            />
+                          ))
+                        ) : (
+                          <div className="text-center py-12 text-gray-500">
+                            <p>No perfect hits yet — try lowering amount or increasing urgency window.</p>
+                          </div>
+                        )}
+                      </motion.div>
+                    ) : activeTab === 'close' ? (
+                      <motion.div
+                        key="close"
+                        initial={{ opacity: 0 }}
+                        animate={{ opacity: 1 }}
+                        exit={{ opacity: 0 }}
+                        className="space-y-4"
+                      >
+                        {matches.closeMatches.length > 0 ? (
+                          matches.closeMatches.map((item, index) => (
+                            <CloseMatchCard
+                              key={item.product.id}
+                              product={item.product}
+                              reasons={item.reasons}
+                              improvements={item.improvements}
+                              index={index}
+                            />
+                          ))
+                        ) : (
+                          <div className="text-center py-12 text-gray-500">
+                            <p>No close matches found.</p>
+                          </div>
+                        )}
+                      </motion.div>
+                    ) : (
+                      <motion.div
+                        key="filtered"
+                        initial={{ opacity: 0 }}
+                        animate={{ opacity: 1 }}
+                        exit={{ opacity: 0 }}
+                        className="space-y-4"
+                      >
+                        {matches.filtered.length > 0 ? (
+                          matches.filtered.map((item, index) => (
+                            <FilteredCard
+                              key={item.product.id}
+                              product={item.product}
+                              reasons={item.reasons}
+                              index={index}
+                            />
+                          ))
+                        ) : (
+                          <div className="text-center py-12 text-gray-500">
+                            <p>Nothing excluded yet. Nice.</p>
+                          </div>
+                        )}
+                      </motion.div>
+                    )}
+                  </AnimatePresence>
+                </div>
               </div>
             </div>
+          )}
+        </motion.div>
+
+        {/* Mobile Floating Recommendations Button */}
+        {hasUserInput && mode === 'chat' && (
+          <motion.button
+            initial={{ scale: 0, opacity: 0 }}
+            animate={{ scale: 1, opacity: 1 }}
+            exit={{ scale: 0, opacity: 0 }}
+            transition={{ type: "spring", stiffness: 300, damping: 25 }}
+            whileHover={{ scale: 1.1 }}
+            whileTap={{ scale: 0.95 }}
+            onClick={toggleMobileModal}
+            className="md:hidden fixed bottom-6 right-6 w-14 h-14 bg-brand-600 hover:bg-brand-700 text-white rounded-full shadow-lg flex items-center justify-center z-50 transition-colors duration-200"
+            title="View recommendations"
+          >
+            <MessageSquare size={24} />
+            {matches.available.length > 0 && (
+              <motion.div
+                initial={{ scale: 0 }}
+                animate={{ scale: 1 }}
+                className="absolute -top-2 -right-2 w-6 h-6 bg-red-500 text-white text-xs font-bold rounded-full flex items-center justify-center"
+              >
+                {matches.available.length}
+              </motion.div>
+            )}
+          </motion.button>
+        )}
+      </main>
+
+      {/* Mobile Recommendations Modal */}
+      <AnimatePresence>
+        {showMobileModal && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="md:hidden fixed inset-0 bg-black/50 z-50 flex items-end"
+            onClick={toggleMobileModal}
+          >
+            <motion.div
+              initial={{ y: "100%" }}
+              animate={{ y: 0 }}
+              exit={{ y: "100%" }}
+              transition={{ type: "spring", stiffness: 300, damping: 30 }}
+              className="w-full bg-white dark:bg-slate-900 rounded-t-2xl max-h-[85vh] flex flex-col"
+              onClick={(e) => e.stopPropagation()}
+            >
+              {/* Modal Header */}
+              <div className="flex items-center justify-between p-6 border-b border-slate-200 dark:border-slate-700">
+                <div className="flex items-center gap-3">
+                  <div className="w-6 h-6 bg-brand-600 rounded-lg flex items-center justify-center">
+                    <span className="text-white text-sm font-bold">⚡</span>
+                  </div>
+                  <h2 className="text-xl font-bold text-slate-900 dark:text-slate-100">Recommendations</h2>
+                </div>
+                <motion.button
+                  whileHover={{ scale: 1.1 }}
+                  whileTap={{ scale: 0.9 }}
+                  onClick={toggleMobileModal}
+                  className="p-2 text-slate-600 hover:text-slate-900 dark:text-slate-400 dark:hover:text-slate-100 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 rounded-full"
+                >
+                  <X size={20} />
+                </motion.button>
+              </div>
+
+              {/* Modal Content */}
+              <div className="flex-1 overflow-y-auto">
+                <div className="p-6">
+                  <MatchesTabs
+                    availableCount={matches.available.length}
+                    filteredCount={matches.filtered.length}
+                    closeMatchCount={matches.closeMatches.length}
+                    activeTab={activeTab}
+                    onTabChange={setActiveTab}
+                  />
+
+                  <div className="mt-6">
+                    <AnimatePresence mode="wait">
+                      {activeTab === 'available' ? (
+                        <motion.div
+                          key="available"
+                          initial={{ opacity: 0 }}
+                          animate={{ opacity: 1 }}
+                          exit={{ opacity: 0 }}
+                          className="space-y-4"
+                        >
+                          {matches.available.length > 0 ? (
+                            matches.available.map((product, index) => (
+                              <MatchCard
+                                key={product.id}
+                                product={product}
+                                reasons={matchReasons[product.id] || [
+                                  'Meets basic requirements',
+                                  'Good fit for your profile',
+                                  'Fast approval process'
+                                ]}
+                                onApply={() => {
+                                  handleApply(product);
+                                  setShowMobileModal(false);
+                                }}
+                                index={index}
+                              />
+                            ))
+                          ) : (
+                            <div className="text-center py-12">
+                              <div className="w-12 h-12 bg-slate-100 dark:bg-slate-800 rounded-2xl flex items-center justify-center mx-auto mb-3">
+                                <span className="text-2xl">🔍</span>
+                              </div>
+                              <p className="text-slate-700 dark:text-slate-300 font-medium">No matches yet</p>
+                              <p className="text-sm text-slate-500 dark:text-slate-400 mt-1">Keep sharing details to find matches</p>
+                            </div>
+                          )}
+                        </motion.div>
+                      ) : activeTab === 'close' ? (
+                        <motion.div
+                          key="close"
+                          initial={{ opacity: 0 }}
+                          animate={{ opacity: 1 }}
+                          exit={{ opacity: 0 }}
+                          className="space-y-4"
+                        >
+                          {matches.closeMatches.length > 0 ? (
+                            matches.closeMatches.map((item, index) => (
+                              <CloseMatchCard
+                                key={item.product.id}
+                                product={item.product}
+                                reasons={item.reasons}
+                                improvements={item.improvements}
+                                index={index}
+                              />
+                            ))
+                          ) : (
+                            <div className="text-center py-12">
+                              <div className="w-12 h-12 bg-slate-100 dark:bg-slate-800 rounded-2xl flex items-center justify-center mx-auto mb-3">
+                                <span className="text-2xl">📋</span>
+                              </div>
+                              <p className="text-slate-700 dark:text-slate-300 font-medium">No close matches</p>
+                            </div>
+                          )}
+                        </motion.div>
+                      ) : (
+                        <motion.div
+                          key="filtered"
+                          initial={{ opacity: 0 }}
+                          animate={{ opacity: 1 }}
+                          exit={{ opacity: 0 }}
+                          className="space-y-4"
+                        >
+                          {matches.filtered.length > 0 ? (
+                            matches.filtered.map((item, index) => (
+                              <FilteredCard
+                                key={item.product.id}
+                                product={item.product}
+                                reasons={item.reasons}
+                                index={index}
+                              />
+                            ))
+                          ) : (
+                            <div className="text-center py-12">
+                              <div className="w-12 h-12 bg-slate-100 dark:bg-slate-800 rounded-2xl flex items-center justify-center mx-auto mb-3">
+                                <span className="text-2xl">✅</span>
+                              </div>
+                              <p className="text-slate-700 dark:text-slate-300 font-medium">Nothing filtered out</p>
+                            </div>
+                          )}
+                        </motion.div>
+                      )}
+                    </AnimatePresence>
+                  </div>
+                </div>
+              </div>
+            </motion.div>
           </motion.div>
         )}
       </AnimatePresence>
-      
-      {mode === 'form' && (
-        <div className="md:col-span-3 md:sticky md:top-8 md:h-[calc(100vh-8rem)]">
-          <div className="bg-white rounded-2xl shadow-sm p-6 h-full flex flex-col">
-            <MatchesTabs
-              availableCount={matches.available.length}
-              filteredCount={matches.filtered.length}
-              closeMatchCount={matches.closeMatches.length}
-              activeTab={activeTab}
-              onTabChange={setActiveTab}
-            />
-
-            <div className="flex-1 overflow-y-auto mt-6">
-              <AnimatePresence mode="wait">
-                {activeTab === 'available' ? (
-                  <motion.div
-                    key="available"
-                    initial={{ opacity: 0 }}
-                    animate={{ opacity: 1 }}
-                    exit={{ opacity: 0 }}
-                    className="space-y-4"
-                  >
-                    {matches.available.length > 0 ? (
-                      matches.available.map((product, index) => (
-                        <MatchCard
-                          key={product.id}
-                          product={product}
-                          reasons={matchReasons[product.id] || [
-                            'Meets basic requirements',
-                            'Good fit for your profile',
-                            'Fast approval process'
-                          ]}
-                          onApply={() => handleApply(product)}
-                          index={index}
-                        />
-                      ))
-                    ) : (
-                      <div className="text-center py-12 text-gray-500">
-                        <p>No perfect hits yet — try lowering amount or increasing urgency window.</p>
-                      </div>
-                    )}
-                  </motion.div>
-                ) : activeTab === 'close' ? (
-                  <motion.div
-                    key="close"
-                    initial={{ opacity: 0 }}
-                    animate={{ opacity: 1 }}
-                    exit={{ opacity: 0 }}
-                    className="space-y-4"
-                  >
-                    {matches.closeMatches.length > 0 ? (
-                      matches.closeMatches.map((item, index) => (
-                        <CloseMatchCard
-                          key={item.product.id}
-                          product={item.product}
-                          reasons={item.reasons}
-                          improvements={item.improvements}
-                          index={index}
-                        />
-                      ))
-                    ) : (
-                      <div className="text-center py-12 text-gray-500">
-                        <p>No close matches found.</p>
-                      </div>
-                    )}
-                  </motion.div>
-                ) : (
-                  <motion.div
-                    key="filtered"
-                    initial={{ opacity: 0 }}
-                    animate={{ opacity: 1 }}
-                    exit={{ opacity: 0 }}
-                    className="space-y-4"
-                  >
-                    {matches.filtered.length > 0 ? (
-                      matches.filtered.map((item, index) => (
-                        <FilteredCard
-                          key={item.product.id}
-                          product={item.product}
-                          reasons={item.reasons}
-                          index={index}
-                        />
-                      ))
-                    ) : (
-                      <div className="text-center py-12 text-gray-500">
-                        <p>Nothing excluded yet. Nice.</p>
-                      </div>
-                    )}
-                  </motion.div>
-                )}
-              </AnimatePresence>
-            </div>
-          </div>
-        </div>
-      )}
-    </div>
-  </main>
 
       <ApplyModal
         isOpen={showApplyModal}

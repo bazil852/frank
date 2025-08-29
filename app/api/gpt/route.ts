@@ -12,26 +12,65 @@ export async function POST(request: NextRequest) {
     
     console.log('GPT API called with:', { message, profile, productNotes });
     console.log('API Key exists:', !!process.env.OPENAI_API_KEY);
+    console.log('API Key first 10 chars:', process.env.OPENAI_API_KEY?.substring(0, 10));
 
     if (!process.env.OPENAI_API_KEY) {
-      console.log('No OpenAI API key found, using fallback');
+      console.log('❌ NO OPENAI API KEY FOUND - USING FALLBACK');
       return NextResponse.json({
         rationale: productNotes ? 'Good fit for your business profile' : undefined,
-        summary: message ? 'Got it — I\'ll tune your matches based on your needs' : undefined,
+        summary: message ? 'Thanks for the information! Let me process that for you.' : undefined,
         extracted: parseExtracted({}, message || '')
       });
     }
 
     // Base system prompt with personality overlay
-    const baseSystemPrompt = `You are Frank — an assistant who helps SA SMEs find funding matches. You explain clearly why options fit or not, use ZAR, never invent providers.
+    const baseSystemPrompt = `You are Frank — the shortcut to funding that actually lands. No dead ends, no 30-page forms.
 
-Your job is MATCHING, not vetting:
-- You match SME inputs (industry, years trading, monthly turnover, VAT status, amount needed, use of funds, urgency days, province) against a static catalog of funding products.
-- You are NOT a credit checker, document parser, or affordability assessor. You just filter catalog rules.
-- Answer questions about specific lenders using catalog data (requirements, amounts, speed, etc.).
-- Collect the 8 key inputs needed for matching: industry, years trading, monthly turnover, VAT registered (yes/no), amount, use of funds, urgency (days), province.
-- Keep asking follow-up questions to get missing details.
-- Only reference providers from the catalog. Never invent or hallucinate lenders.`;
+PERSONALITY & TONE:
+- Be human and witty with light sarcasm (always helpful though)
+- Use casual, conversational language
+- Make funding feel less intimidating
+- Never sound robotic or formal
+
+CONVERSATION FLOW:
+
+0. OPENER (First message only):
+"I'm Frank — the shortcut to funding that actually lands. No dead ends, no 30-page forms.
+Tell me a bit about your business — how long you've been running, your turnover, and if you're registered. The more you share, the faster I can match you."
+
+1. SMART CAPTURE & ACKNOWLEDGE:
+- Parse user responses for multiple fields at once
+- Store ALL information immediately (don't re-ask)
+- Acknowledge what you captured: "Perfect — registered, 18 months, R1.5m turnover. You're basically prom king to lenders. Let me just fill in a couple of gaps…"
+
+2. CORE CRITERIA (Ask ONLY if not already provided):
+- "Do you run things through a South African business bank account, or is it still friends-with-benefits with your personal one?"
+- "Any of the directors South African residents, or is it an all-foreign squad?"
+- "Do you have at least 6 months of bank statements handy? (Lenders love them more than coffee.)"
+- "How much funding are you after — a R250k top-up, a million-plus expansion, or bigger?"
+- "And how fast do you need the cash — this week, or can you wait while lenders do their paper-shuffling dance?"
+
+3. MATCH REVEAL (Once you have enough info):
+"Alright, based on your info, you've got matches. These lenders look good for you — and you can apply right now. No wasting time chasing dead ends. Want me to help you apply to one, or just throw your hat in the ring with all of them? Totally normal to apply to a few and see who comes back fastest — and cheapest."
+
+4. APPLICATION STEP (When user wants to proceed):
+"All I need now:
+– Your business name
+– Your email
+– Your phone number
+That sets up your account so you can track everything. Think of it as your backstage pass to funding — minus the dodgy guest list."
+
+Then add: "Quick heads-up while we're at it: every lender does a credit check on you and the company. If there's anything messy, it's better to mention it upfront — lenders hate surprises more than a bad punchline."
+
+5. CONFIRMATION:
+"Perfect. I've set up your account and sent your details to the lenders that fit you. They'll reach out directly. I'll also check in later — email or WhatsApp, your pick — and no, I'm not the clingy type."
+
+CRITICAL RULES:
+- NEVER re-ask for information already provided
+- Store everything the user mentions, even if volunteered outside the immediate question
+- Always acknowledge what you've captured
+- Match against the catalog below, never invent lenders
+- Track conversation state and know where you are in the flow`;
 
     // Add personality if provided
     const personalityPrompt = personality 
@@ -64,30 +103,28 @@ Available Lenders:
 Here's the lender catalog for reference:
 ${catalogData}
 
-If they're asking about a specific lender, answer their question using the catalog data above, then ask what they need.
-Otherwise, provide a summary acknowledging their business needs and ask for missing info.
+RESPONSE TASK:
+1. If they're asking about a specific lender, answer their question using the catalog data above, then ask what they need.
+2. Otherwise, provide a summary acknowledging their business needs and ask for missing info.
+3. Follow Frank's personality: witty, human, helpful with light sarcasm.
+4. Extract ALL business information mentioned.
 
-STYLE: Follow the personality instructions provided. Use plain text, no markdown formatting except for **bold** when appropriate. If you need to emphasize something, use CAPS or list items with numbers/bullets naturally.
+EXTRACTION FIELDS:
+- industry, monthlyTurnover (number), amountRequested (number), yearsTrading (number)
+- vatRegistered (boolean), useOfFunds, urgencyDays (number), province
+- contact: {name, email, phone}
 
-Also extract ANY business information mentioned in the message into the extracted object. Be very thorough:
-- Industry/sector mentions (Robotics, Retail, Services, Manufacturing, etc.) -> "industry"
-- Monthly turnover/revenue amounts in Rand -> "monthlyTurnover" (as number)
-- Funding amounts needed -> "amountRequested" (as number) 
-- Years in business/trading -> "yearsTrading" (as number)
-- VAT registration status -> "vatRegistered" (as boolean)
-- Use of funds/purpose -> "useOfFunds"
-- Timeline/urgency in days -> "urgencyDays" (as number)
-- Location/province -> "province"
+You must respond with valid JSON only. Use this exact format:
+{
+  "summary": "your witty Frank response here",
+  "extracted": {"field1": value1, "field2": value2}
+}
 
-CRITICAL: Always include ALL extracted fields in your JSON response, even if some are from previous context.
-
-CRITICAL JSON FORMAT: You MUST respond with ONLY valid JSON. No explanations, no markdown, no formatting. Just pure JSON.
-
-FORMAT REQUIREMENT: Your response must be exactly this structure:
-{"summary": "your response message", "extracted": {"field1": value1, "field2": value2}}
-
-EXAMPLE JSON RESPONSE:
-{"summary": "Got it! I can see you're in robotics with R50k monthly turnover, need R100k funding. Let me find your matches!", "extracted": {"industry": "Robotics", "monthlyTurnover": 50000, "amountRequested": 100000, "yearsTrading": 4, "vatRegistered": false, "useOfFunds": "To scale your business", "urgencyDays": 30, "province": "Western Cape"}}`;
+For a greeting like "hey" with no business info, respond like:
+{
+  "summary": "Hey there! Ready to chat about your business and get that funding rolling? Tell me what you're working with — years trading, monthly turnover, industry, and how much you need. The more details, the better the matches.",
+  "extracted": {}
+}`;
     }
 
     console.log('Sending to OpenAI with prompt:', prompt);
@@ -106,13 +143,17 @@ EXAMPLE JSON RESPONSE:
     const completion = await openai.chat.completions.create({
       model: 'gpt-4o',
       messages,
-      temperature: 0.7,
-      max_tokens: 500, // Increased from 150 to 500 for fuller responses
+      temperature: 0.1, // Very low temperature for strict JSON formatting
+      max_tokens: 400,
+      response_format: { type: "json_object" }, // Force JSON response
     });
 
     const response = completion.choices[0]?.message?.content || '';
     
-    console.log('OpenAI response:', response);
+    console.log('✅ OpenAI API call successful');
+    console.log('📝 Raw OpenAI response:', response);
+    console.log('📝 Response length:', response.length);
+    console.log('📝 First 100 chars:', response.substring(0, 100));
 
     if (productNotes) {
       return NextResponse.json({ rationale: response });
@@ -129,6 +170,8 @@ EXAMPLE JSON RESPONSE:
         // If response doesn't look like JSON, try to extract from fallback
         if (!cleanResponse.startsWith('{')) {
           console.warn('Response is not JSON format, using fallback extraction');
+          console.warn('Raw response was:', response);
+          console.warn('Cleaned response was:', cleanResponse);
           const extractedData = parseExtracted({}, message);
           return NextResponse.json({
             summary: 'Thanks for the information! Let me process that for you.',
@@ -251,6 +294,20 @@ function parseExtracted(extracted: any, message: string): Partial<Profile> {
     if (extracted.province) {
       result.province = extracted.province;
     }
+    
+    // Handle contact information
+    if (extracted.contact) {
+      result.contact = {};
+      if (extracted.contact.name) {
+        result.contact.name = extracted.contact.name;
+      }
+      if (extracted.contact.email) {
+        result.contact.email = extracted.contact.email;
+      }
+      if (extracted.contact.phone) {
+        result.contact.phone = extracted.contact.phone;
+      }
+    }
   }
   
   // Then try to extract from the message if GPT didn't catch it
@@ -313,6 +370,55 @@ function parseExtracted(extracted: any, message: string): Partial<Profile> {
     const yearsMatch = message.match(/(\d+)\s*years?/i);
     if (yearsMatch) {
       result.yearsTrading = parseInt(yearsMatch[1]);
+    }
+  }
+
+  // Extract contact information if not already captured
+  if (!result.contact) {
+    result.contact = {};
+  }
+  
+  // Extract email addresses
+  if (!result.contact.email) {
+    const emailMatch = message.match(/([a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,})/);
+    if (emailMatch) {
+      result.contact.email = emailMatch[1];
+    }
+  }
+  
+  // Extract phone numbers (SA format)
+  if (!result.contact.phone) {
+    const phoneMatches = [
+      message.match(/(\+27\s*\d{2}\s*\d{3}\s*\d{4})/), // +27 11 123 4567
+      message.match(/(0\d{2}\s*\d{3}\s*\d{4})/), // 011 123 4567
+      message.match(/(\d{10})/), // 0111234567
+      message.match(/(\+27\d{9})/), // +27111234567
+    ];
+    
+    for (const match of phoneMatches) {
+      if (match) {
+        result.contact.phone = match[1].replace(/\s+/g, '');
+        break;
+      }
+    }
+  }
+  
+  // Extract business name (look for common patterns)
+  if (!result.contact.name) {
+    const businessPatterns = [
+      /business name[:\s]+([^,\n.]+)/i,
+      /company name[:\s]+([^,\n.]+)/i,
+      /([A-Z][a-zA-Z\s&]+(?:Ltd|Pty|CC|Inc))/,
+      /my business is called ([^,\n.]+)/i,
+      /we are ([A-Z][a-zA-Z\s&]+)/i,
+    ];
+    
+    for (const pattern of businessPatterns) {
+      const match = message.match(pattern);
+      if (match && match[1]) {
+        result.contact.name = match[1].trim();
+        break;
+      }
     }
   }
 

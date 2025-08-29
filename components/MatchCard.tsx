@@ -18,45 +18,53 @@ export default function MatchCard({ product, reasons, onApply, index }: MatchCar
       initial={{ opacity: 0, y: 20 }}
       animate={{ opacity: 1, y: 0 }}
       transition={{ delay: index * 0.05 }}
-      whileHover={{ y: -2, boxShadow: '0 10px 30px -10px rgba(0,0,0,0.1)' }}
-      className="bg-white rounded-2xl p-6 shadow-sm border border-gray-100 transition-shadow"
+      whileHover={{ y: -4, scale: 1.02 }}
+      whileTap={{ scale: 0.98 }}
+      className="bg-white dark:bg-slate-800 rounded-2xl p-6 shadow-sm border border-slate-100 dark:border-slate-700 hover:shadow-lg hover:border-brand-200 dark:hover:border-brand-700 transition-all duration-200 group"
     >
-      <div className="flex items-start justify-between mb-4">
-        <div className="flex items-center gap-3">
-          <div className="w-12 h-12 bg-gray-50 rounded-lg flex items-center justify-center">
-            <span className="text-lg font-bold text-gray-400">
-              {product.provider.charAt(0)}
-            </span>
+      <div className="flex items-start justify-between mb-5">
+        <div className="flex items-center gap-4">
+          <div className="w-14 h-14 bg-brand-600 rounded-2xl flex items-center justify-center text-white text-xl font-bold shadow-sm group-hover:scale-110 transition-transform duration-200">
+            {product.provider.charAt(0)}
           </div>
           <div>
-            <h3 className="font-semibold text-gray-900">{product.provider}</h3>
-            <p className="text-sm text-gray-500">
-              {product.productType} • R{(product.amountMin / 1000).toFixed(0)}k-R
-              {(product.amountMax / 1000).toFixed(0)}k
+            <h3 className="font-bold text-slate-900 dark:text-slate-100 text-lg group-hover:text-brand-700 dark:group-hover:text-brand-400 transition-colors">{product.provider}</h3>
+            <p className="text-sm text-slate-500 dark:text-slate-400 font-medium mt-1 transition-colors">
+              {product.productType} • R{(product.amountMin / 1000).toFixed(0)}k-R{(product.amountMax / 1000).toFixed(0)}k
             </p>
           </div>
         </div>
-        <div className="flex items-center gap-1 text-sm text-gray-500">
-          <Clock size={14} />
-          <span>{product.speedDays[0]}-{product.speedDays[1]} days</span>
+        <div className="flex items-center gap-2 bg-slate-50 dark:bg-slate-700 px-3 py-1.5 rounded-full transition-colors">
+          <Clock size={14} className="text-slate-400 dark:text-slate-500" />
+          <span className="text-sm font-medium text-slate-600 dark:text-slate-400 transition-colors">{product.speedDays[0]}-{product.speedDays[1]} days</span>
         </div>
       </div>
 
-      <ul className="space-y-2 mb-4">
+      <div className="space-y-3 mb-6">
         {reasons.map((reason, i) => (
-          <li key={i} className="flex items-start gap-2 text-sm text-gray-600">
-            <Check size={16} className="text-green-500 mt-0.5 flex-shrink-0" />
-            <span>{reason}</span>
-          </li>
+          <motion.div
+            key={i}
+            initial={{ opacity: 0, x: -10 }}
+            animate={{ opacity: 1, x: 0 }}
+            transition={{ delay: (index * 0.05) + (i * 0.1) }}
+            className="flex items-start gap-3"
+          >
+            <div className="w-5 h-5 bg-brand-100 rounded-full flex items-center justify-center mt-0.5 flex-shrink-0">
+              <Check size={12} className="text-brand-600" />
+            </div>
+            <span className="text-sm text-slate-700 dark:text-slate-300 leading-relaxed transition-colors">{reason}</span>
+          </motion.div>
         ))}
-      </ul>
+      </div>
 
-      <button
+      <motion.button
+        whileHover={{ scale: 1.02 }}
+        whileTap={{ scale: 0.98 }}
         onClick={onApply}
-        className="w-full bg-blue-600 text-white py-2 px-4 rounded-lg font-medium hover:bg-blue-700 transition-colors"
+        className="w-full bg-brand-600 text-white py-3 px-6 rounded-2xl font-semibold shadow-sm hover:shadow-md hover:bg-brand-700 transition-all duration-200 text-sm"
       >
-        Apply
-      </button>
+        Apply Now
+      </motion.button>
     </motion.div>
   );
 }

@@ -2,8 +2,10 @@
 
 import { motion, AnimatePresence } from 'framer-motion';
 import { useState, useRef, useEffect } from 'react';
-import { Send, Sparkles } from 'lucide-react';
-import PersonalityModal from './PersonalityModal';
+import { Send, RotateCcw, Sparkles, Maximize2, Minimize2 } from 'lucide-react';
+import { ConversationTracker } from '@/lib/db-conversations';
+import { AnonymousUserTracker } from '@/lib/user-tracking';
+import ChipsBar from './ChipsBar';
 
 function formatMessage(content: string): string {
   return content
@@ -25,23 +27,110 @@ interface Message {
 }
 
 interface ChatUIProps {
-  onMessage: (message: string, chatHistory?: Array<{role: string, content: string}>, personality?: string) => Promise<string>;
+  onMessage: (message: string, chatHistory?: Array<{role: 'system' | 'user' | 'assistant', content: string}>, personality?: string) => Promise<string>;
+  onReset?: () => void;
+  onToggleExpand?: () => void;
+  isExpanded?: boolean;
+  showProfileProgress?: boolean;
+  profile?: any;
+  showChips?: boolean;
+  hideMobileFeatures?: boolean;
 }
 
-export default function ChatUI({ onMessage }: ChatUIProps) {
-  const [showPersonalityModal, setShowPersonalityModal] = useState(false);
+export default function ChatUI({ 
+  onMessage, 
+  onReset, 
+  onToggleExpand, 
+  isExpanded = false, 
+  showProfileProgress = false, 
+  profile = {}, 
+  showChips = false,
+  hideMobileFeatures = false
+}: ChatUIProps) {
   const [personality, setPersonality] = useState('Professional and friendly. Be helpful and informative while maintaining a warm tone.');
-  const [messages, setMessages] = useState<Message[]>([
-    {
-      id: '1',
-      type: 'bot',
-      content: 'Hi, I\'m Frank. I\'ll match you to real South African funding options.\n\n**Key information I need (at least 3 of these):**\n- Your industry\n- Years in business\n- Monthly turnover (R)\n- How much funding you need (R)\n\n**Also helpful:**\n- VAT registration status\n- What you need the funding for\n- How urgently you need it\n- Your province\n\nOnce I have enough details (3+ key items), I\'ll show you live funding matches on the right.',
-      timestamp: new Date(),
-    },
-  ]);
+  const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState('');
   const [sending, setSending] = useState(false);
+  const [loadingHistory, setLoadingHistory] = useState(true);
+  const [messageIndex, setMessageIndex] = useState(0);
   const scrollRef = useRef<HTMLDivElement>(null);
+  const hasLoadedHistory = useRef(false);
+
+  // Load conversation history on component mount
+  useEffect(() => {
+    const loadConversationHistory = async () => {
+      if (hasLoadedHistory.current) return;
+      hasLoadedHistory.current = true;
+      
+      try {
+        setLoadingHistory(true);
+        
+        // Check if user has conversation history
+        const hasHistory = await ConversationTracker.hasConversationHistory();
+        
+        if (hasHistory) {
+          // Load previous conversations
+          const history = await ConversationTracker.getConversationHistory();
+          const summary = await ConversationTracker.getConversationSummary();
+          
+          if (summary?.personality) {
+            setPersonality(summary.personality);
+          }
+          
+          if (history.length > 0) {
+            // Convert conversation history to Message format
+            const loadedMessages: Message[] = history.map((msg, idx) => ({
+              id: `loaded-${idx}`,
+              type: msg.role === 'user' ? 'user' : 'bot',
+              content: msg.content,
+              timestamp: new Date(),
+            }));
+            
+            // Add welcome back message
+            loadedMessages.push({
+              id: 'welcome-back',
+              type: 'bot',
+              content: 'Welcome back! I can see our previous conversation. Feel free to continue where we left off or start something new.',
+              timestamp: new Date(),
+            });
+            
+            setMessages(loadedMessages);
+            const latestIndex = await ConversationTracker.getLatestMessageIndex();
+            setMessageIndex(latestIndex);
+          } else {
+            // No history, show initial message
+            setMessages([{
+              id: '1',
+              type: 'bot',
+              content: 'I\'m Frank — the shortcut to funding that actually lands. No dead ends, no 30-page forms.\n\nTell me a bit about your business — how long you\'ve been running, your turnover, and if you\'re registered. The more you share, the faster I can match you.',
+              timestamp: new Date(),
+            }]);
+          }
+        } else {
+          // First time user
+          setMessages([{
+            id: '1',
+            type: 'bot',
+            content: 'I\'m Frank — the shortcut to funding that actually lands. No dead ends, no 30-page forms.\n\nTell me a bit about your business — how long you\'ve been running, your turnover, and if you\'re registered. The more you share, the faster I can match you.',
+            timestamp: new Date(),
+          }]);
+        }
+      } catch (error) {
+        console.error('Error loading conversation history:', error);
+        // Fallback to default message
+        setMessages([{
+          id: '1',
+          type: 'bot',
+          content: 'I\'m Frank — the shortcut to funding that actually lands. No dead ends, no 30-page forms.\n\nTell me a bit about your business — how long you\'ve been running, your turnover, and if you\'re registered. The more you share, the faster I can match you.',
+          timestamp: new Date(),
+        }]);
+      } finally {
+        setLoadingHistory(false);
+      }
+    };
+
+    loadConversationHistory();
+  }, []);
 
   useEffect(() => {
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: 'smooth' });
@@ -62,13 +151,34 @@ export default function ChatUI({ onMessage }: ChatUIProps) {
     setSending(true);
 
     try {
+      // Save user message to database
+      await ConversationTracker.saveMessage(
+        'user',
+        userMessage.content,
+        messageIndex,
+        { personality }
+      );
+      setMessageIndex(prev => prev + 1);
+
       // Convert messages to chat history format
       const chatHistory = messages.map(msg => ({
-        role: msg.type === 'user' ? 'user' : 'assistant',
+        role: msg.type === 'user' ? 'user' as const : 'assistant' as const,
         content: msg.content
       }));
       
       const response = await onMessage(userMessage.content, chatHistory, personality);
+      
+      // Save bot response to database
+      await ConversationTracker.saveMessage(
+        'assistant',
+        response,
+        messageIndex + 1,
+        {}
+      );
+      setMessageIndex(prev => prev + 1);
+
+      // Update conversation metadata with personality
+      await ConversationTracker.updateConversationMetadata({}, personality);
       
       setTimeout(() => {
         const botMessage: Message = {
@@ -81,94 +191,244 @@ export default function ChatUI({ onMessage }: ChatUIProps) {
         setSending(false);
       }, 400 + Math.random() * 300);
     } catch (error) {
+      console.error('Error in chat:', error);
       setSending(false);
     }
   };
 
+  const handleResetChat = async () => {
+    try {
+      // Clear conversation history from database
+      await ConversationTracker.clearConversationHistory();
+      
+      // Reset local state
+      setMessages([{
+        id: '1',
+        type: 'bot',
+        content: 'I\'m Frank — the shortcut to funding that actually lands. No dead ends, no 30-page forms.\n\nTell me a bit about your business — how long you\'ve been running, your turnover, and if you\'re registered. The more you share, the faster I can match you.',
+        timestamp: new Date(),
+      }]);
+      
+      setInput('');
+      setMessageIndex(0);
+      
+      // Notify parent component to reset its state
+      if (onReset) {
+        onReset();
+      }
+      
+      console.log('Chat reset completed');
+    } catch (error) {
+      console.error('Error resetting chat:', error);
+    }
+  };
+
   return (
-    <div className="flex flex-col h-full">
-      <div className="flex items-center justify-between p-4 border-b">
-        <div className="flex items-center gap-2">
-          <div className="w-8 h-8 bg-blue-600 rounded-full flex items-center justify-center text-white text-sm font-bold">
-            F
+    <div className="w-full h-full flex flex-col bg-white dark:bg-slate-800 rounded-2xl shadow-sm border border-slate-100 dark:border-slate-700 transition-colors duration-200">
+      <div className="flex items-center justify-between p-5 border-b border-slate-100 dark:border-slate-700 transition-colors duration-200">
+        <div className="flex items-center gap-3">
+          <div className="relative">
+            <div className="w-10 h-10 bg-brand-600 rounded-full flex items-center justify-center text-white text-lg font-bold shadow-sm">
+              F
+            </div>
+            <div className="absolute -bottom-1 -right-1 w-3 h-3 bg-emerald-400 rounded-full border-2 border-white"></div>
           </div>
           <div>
-            <h3 className="font-semibold text-gray-900">Frank</h3>
-            <p className="text-xs text-gray-500">AI Funding Advisor</p>
+            <h3 className="font-semibold text-slate-900 dark:text-slate-100 transition-colors duration-200">Frank</h3>
           </div>
         </div>
-        <button
-          onClick={() => setShowPersonalityModal(true)}
-          className="flex items-center gap-2 px-3 py-1.5 text-sm bg-gray-100 hover:bg-gray-200 rounded-lg transition-colors"
-          title="Customize Frank's personality"
-        >
-          <Sparkles size={16} />
-          <span>Personality</span>
-        </button>
+        <div className="flex items-center gap-2">
+          {onToggleExpand && !hideMobileFeatures && (
+            <motion.button
+              whileHover={{ scale: 1.05, rotate: 5 }}
+              whileTap={{ scale: 0.95 }}
+              onClick={onToggleExpand}
+              className="hidden md:flex p-2 text-slate-600 hover:text-slate-900 dark:text-slate-400 dark:hover:text-slate-100 bg-slate-50 hover:bg-slate-100 dark:bg-slate-700 dark:hover:bg-slate-600 rounded-full transition-all duration-300 ease-in-out"
+              title={isExpanded ? "Minimize chat" : "Expand chat"}
+            >
+              <motion.div
+                animate={{ rotate: isExpanded ? 180 : 0 }}
+                transition={{ duration: 0.3, ease: "easeInOut" }}
+              >
+                {isExpanded ? <Minimize2 size={16} /> : <Maximize2 size={16} />}
+              </motion.div>
+            </motion.button>
+          )}
+          <motion.button
+            whileHover={{ scale: 1.05 }}
+            whileTap={{ scale: 0.95 }}
+            onClick={handleResetChat}
+            className="flex items-center gap-2 px-3 py-1.5 text-sm text-slate-600 hover:text-slate-900 dark:text-slate-400 dark:hover:text-slate-100 bg-slate-50 hover:bg-slate-100 dark:bg-slate-700 dark:hover:bg-slate-600 rounded-full transition-all duration-200"
+            title="Start a fresh conversation"
+          >
+            <RotateCcw size={14} />
+            <span className="font-medium">New Chat</span>
+          </motion.button>
+        </div>
       </div>
-      <div ref={scrollRef} className="flex-1 overflow-y-auto p-4 space-y-4">
-        <AnimatePresence initial={false}>
-          {messages.map((message) => (
+      
+      {/* Profile Progress Section */}
+      {showProfileProgress && (
+        <div className="px-6 py-4 border-b border-slate-100 dark:border-slate-700 bg-brand-50 dark:bg-brand-950/30 transition-colors duration-200">
+          <div className="flex items-center justify-between">
+            <div className="flex-1">
+              <div className="flex items-center gap-2 mb-3">
+                <div className="w-5 h-5 bg-brand-600 rounded-full flex items-center justify-center">
+                  <span className="text-white text-xs font-bold">i</span>
+                </div>
+                <p className="text-sm font-semibold text-slate-800 dark:text-slate-200 transition-colors duration-200">Profile Progress</p>
+              </div>
+              <div className="grid grid-cols-2 gap-2">
+                <div className="flex items-center gap-2">
+                  <div className={`w-2 h-2 rounded-full ${
+                    profile.industry ? 'bg-brand-600' : 'bg-slate-300'
+                  }`} />
+                  <span className={`text-xs ${
+                    profile.industry ? 'text-brand-700 dark:text-brand-400 font-medium' : 'text-slate-500 dark:text-slate-400'
+                  } transition-colors duration-200`}>Industry</span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <div className={`w-2 h-2 rounded-full ${
+                    profile.yearsTrading ? 'bg-brand-600' : 'bg-slate-300'
+                  }`} />
+                  <span className={`text-xs ${
+                    profile.yearsTrading ? 'text-brand-700 dark:text-brand-400 font-medium' : 'text-slate-500 dark:text-slate-400'
+                  } transition-colors duration-200`}>Years Trading</span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <div className={`w-2 h-2 rounded-full ${
+                    profile.monthlyTurnover ? 'bg-brand-600' : 'bg-slate-300'
+                  }`} />
+                  <span className={`text-xs ${
+                    profile.monthlyTurnover ? 'text-brand-700 dark:text-brand-400 font-medium' : 'text-slate-500 dark:text-slate-400'
+                  } transition-colors duration-200`}>Turnover</span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <div className={`w-2 h-2 rounded-full ${
+                    profile.amountRequested ? 'bg-brand-600' : 'bg-slate-300'
+                  }`} />
+                  <span className={`text-xs ${
+                    profile.amountRequested ? 'text-brand-700 dark:text-brand-400 font-medium' : 'text-slate-500 dark:text-slate-400'
+                  } transition-colors duration-200`}>Amount</span>
+                </div>
+              </div>
+            </div>
+            <div className="text-center ml-4">
+              <div className={`text-2xl font-bold transition-all duration-300 ${
+                [profile.industry, profile.yearsTrading, profile.monthlyTurnover, profile.amountRequested].filter(Boolean).length >= 3 
+                  ? 'text-brand-600 scale-110' 
+                  : 'text-slate-700'
+              }`}>
+                {[profile.industry, profile.yearsTrading, profile.monthlyTurnover, profile.amountRequested].filter(Boolean).length}/4
+              </div>
+              <p className={`text-xs mt-1 font-medium transition-colors ${
+                [profile.industry, profile.yearsTrading, profile.monthlyTurnover, profile.amountRequested].filter(Boolean).length >= 3 
+                  ? 'text-brand-600' 
+                  : 'text-slate-500'
+              }`}>
+                {[profile.industry, profile.yearsTrading, profile.monthlyTurnover, profile.amountRequested].filter(Boolean).length >= 3 
+                  ? 'Ready!' 
+                  : 'Need 3+'
+                }
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
+      
+      {/* Chips Section */}
+      {showChips && !hideMobileFeatures && (
+        <div className="hidden md:block px-6 py-4 border-b border-slate-100 dark:border-slate-700 bg-white dark:bg-slate-800 transition-colors duration-200">
+          <ChipsBar profile={profile} />
+        </div>
+      )}
+      
+      <div ref={scrollRef} className="flex-1 overflow-y-auto p-6 space-y-4 bg-slate-50 dark:bg-slate-800 transition-colors duration-200">
+        {loadingHistory ? (
+          <div className="flex items-center justify-center h-full">
+            <div className="text-center">
+              <motion.div 
+                animate={{ rotate: 360 }}
+                transition={{ duration: 1, repeat: Infinity, ease: "linear" }}
+                className="inline-block w-8 h-8 border-3 border-emerald-500 border-t-transparent rounded-full mb-4"
+              />
+              <p className="text-slate-500 text-sm font-medium">Loading conversation history...</p>
+            </div>
+          </div>
+        ) : (
+          <AnimatePresence initial={false}>
+            {messages.map((message, index) => (
             <motion.div
               key={message.id}
-              initial={{ opacity: 0, y: 10 }}
-              animate={{ opacity: 1, y: 0 }}
+              initial={{ opacity: 0, y: 20, scale: 0.95 }}
+              animate={{ opacity: 1, y: 0, scale: 1 }}
+              exit={{ opacity: 0, y: -10, scale: 0.95 }}
+              transition={{ duration: 0.3, delay: index * 0.05 }}
               className={`flex ${message.type === 'user' ? 'justify-end' : 'justify-start'}`}
             >
               <div
-                className={`flex items-start gap-2 max-w-[80%] ${
+                className={`flex items-start gap-3 max-w-[75%] ${
                   message.type === 'user' ? 'flex-row-reverse' : ''
                 }`}
               >
                 {message.type === 'bot' && (
-                  <div className="w-8 h-8 bg-blue-600 rounded-full flex items-center justify-center text-white text-sm font-bold flex-shrink-0">
+                  <motion.div 
+                    initial={{ scale: 0 }}
+                    animate={{ scale: 1 }}
+                    transition={{ type: "spring", stiffness: 500, damping: 30 }}
+                    className="w-8 h-8 bg-brand-600 rounded-full flex items-center justify-center text-white text-sm font-bold flex-shrink-0 shadow-sm"
+                  >
                     F
-                  </div>
+                  </motion.div>
                 )}
-                <div
-                  className={`px-4 py-2 rounded-2xl ${
+                <motion.div
+                  whileHover={{ scale: 1.01 }}
+                  className={`px-5 py-3 rounded-2xl ${
                     message.type === 'user'
-                      ? 'bg-blue-600 text-white'
-                      : 'bg-gray-100 text-gray-900'
+                      ? 'bg-slate-800 dark:bg-slate-700 text-white shadow-md'
+                      : 'bg-brand-50 dark:bg-slate-700 text-slate-800 dark:text-slate-100 border border-brand-100 dark:border-slate-600 shadow-sm'
                   }`}
                 >
                   <div 
-                    className="whitespace-pre-wrap font-sans"
+                    className={`whitespace-pre-wrap leading-relaxed ${
+                      message.type === 'user' ? 'text-white' : 'text-slate-700 dark:text-slate-100'
+                    }`}
                     dangerouslySetInnerHTML={{
                       __html: formatMessage(message.content)
                     }}
                   />
-                </div>
+                </motion.div>
               </div>
             </motion.div>
-          ))}
-        </AnimatePresence>
+            ))}
+          </AnimatePresence>
+        )}
         {sending && (
           <motion.div
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             className="flex justify-start"
           >
-            <div className="flex items-center gap-2">
-              <div className="w-8 h-8 bg-blue-600 rounded-full flex items-center justify-center text-white text-sm font-bold">
+            <div className="flex items-center gap-3">
+              <div className="w-8 h-8 bg-brand-600 rounded-full flex items-center justify-center text-white text-sm font-bold shadow-sm">
                 F
               </div>
-              <div className="bg-gray-100 rounded-2xl px-4 py-2">
-                <div className="flex gap-1">
+              <div className="bg-brand-50 dark:bg-slate-700 border border-brand-100 dark:border-slate-600 rounded-2xl px-4 py-2 transition-colors duration-200">
+                <div className="flex gap-1.5">
                   <motion.span
                     animate={{ opacity: [0.4, 1, 0.4] }}
                     transition={{ duration: 1.5, repeat: Infinity }}
-                    className="w-2 h-2 bg-gray-400 rounded-full"
+                    className="w-2 h-2 bg-brand-600 rounded-full"
                   />
                   <motion.span
                     animate={{ opacity: [0.4, 1, 0.4] }}
                     transition={{ duration: 1.5, repeat: Infinity, delay: 0.2 }}
-                    className="w-2 h-2 bg-gray-400 rounded-full"
+                    className="w-2 h-2 bg-brand-600 rounded-full"
                   />
                   <motion.span
                     animate={{ opacity: [0.4, 1, 0.4] }}
                     transition={{ duration: 1.5, repeat: Infinity, delay: 0.4 }}
-                    className="w-2 h-2 bg-gray-400 rounded-full"
+                    className="w-2 h-2 bg-brand-600 rounded-full"
                   />
                 </div>
               </div>
@@ -176,33 +436,28 @@ export default function ChatUI({ onMessage }: ChatUIProps) {
           </motion.div>
         )}
       </div>
-      <div className="p-4 border-t">
-        <div className="flex gap-2">
+      <div className="p-5 border-t border-slate-100 dark:border-slate-700 bg-white dark:bg-slate-800 rounded-b-2xl transition-colors duration-200">
+        <div className="relative">
           <input
             type="text"
             value={input}
             onChange={(e) => setInput(e.target.value)}
             onKeyDown={(e) => e.key === 'Enter' && handleSend()}
-            placeholder="Type here..."
+            placeholder="Type your message..."
             disabled={sending}
-            className="flex-1 px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-600 disabled:opacity-50"
+            className="w-full px-6 py-4 pr-14 bg-slate-50 dark:bg-slate-700 border border-slate-200 dark:border-slate-600 rounded-2xl focus:outline-none focus:ring-2 focus:ring-brand-600 focus:border-brand-600 disabled:opacity-50 text-slate-900 dark:text-slate-100 placeholder-slate-500 dark:placeholder-slate-400 transition-all duration-200"
           />
-          <button
+          <motion.button
+            whileHover={{ scale: 1.05 }}
+            whileTap={{ scale: 0.95 }}
             onClick={handleSend}
             disabled={!input.trim() || sending}
-            className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+            className="absolute right-2 top-1/2 transform -translate-y-1/2 w-10 h-10 bg-brand-600 rounded-full flex items-center justify-center text-white shadow-sm disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-200"
           >
-            <Send size={20} />
-          </button>
+            <Send size={18} />
+          </motion.button>
         </div>
       </div>
-      
-      <PersonalityModal
-        isOpen={showPersonalityModal}
-        onClose={() => setShowPersonalityModal(false)}
-        currentPersonality={personality}
-        onSave={(newPersonality) => setPersonality(newPersonality)}
-      />
     </div>
   );
 }

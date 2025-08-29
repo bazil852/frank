@@ -5,6 +5,7 @@ import { X, Check, Copy } from 'lucide-react';
 import { useState } from 'react';
 import { Profile } from '@/lib/filters';
 import { Product } from '@/lib/catalog';
+import { DatabaseTracker } from '@/lib/db-tracking';
 
 interface ApplyModalProps {
   isOpen: boolean;
@@ -46,6 +47,14 @@ export default function ApplyModal({ isOpen, onClose, product, profile }: ApplyM
       
       const data = await response.json();
       setApplicationId(data.id);
+      
+      // Track application in database
+      await DatabaseTracker.trackApplication({
+        lenderId: product.id,
+        profileData: profile,
+        contactInfo: contact,
+      });
+      
       setSubmitted(true);
     } catch (error) {
       console.error('Failed to submit:', error);

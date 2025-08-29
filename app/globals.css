@@ -1,3 +1,110 @@
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
+
+@layer base {
+  :root {
+    --emerald-50: 236 253 245;
+    --emerald-100: 209 250 229;
+    --emerald-200: 167 243 208;
+    --emerald-300: 110 231 183;
+    --emerald-400: 52 211 153;
+    --emerald-500: 16 185 129;
+    --emerald-600: 5 150 105;
+    --emerald-700: 4 120 87;
+    --brand-color: 16 185 129; /* emerald-500 */
+    --brand-50: 236 253 245;
+    --brand-100: 209 250 229;
+    --brand-200: 167 243 208;
+    --brand-300: 110 231 183;
+    --brand-400: 52 211 153;
+    --brand-500: 16 185 129;
+    --brand-600: 5 150 105;
+    --brand-700: 4 120 87;
+    --brand-800: 6 95 70;
+    --brand-900: 6 78 59;
+    --brand-950: 2 44 34;
+    --charcoal: 31 41 55;
+    --slate-50: 248 250 252;
+    --slate-100: 241 245 249;
+    --slate-200: 226 232 240;
+    --slate-300: 203 213 225;
+    --slate-400: 148 163 184;
+    --slate-500: 100 116 139;
+    --slate-600: 71 85 105;
+    --slate-700: 51 65 85;
+    --slate-800: 30 41 59;
+    --slate-900: 15 23 42;
+  }
+
+  .dark {
+    --brand-950: 2 44 34;
+    --slate-50: 15 23 42;
+    --slate-100: 30 41 59;
+    --slate-200: 51 65 85;
+    --slate-300: 71 85 105;
+    --slate-400: 100 116 139;
+    --slate-500: 148 163 184;
+    --slate-600: 203 213 225;
+    --slate-700: 226 232 240;
+    --slate-800: 241 245 249;
+    --slate-900: 248 250 252;
+  }
+
+  * {
+    @apply border-slate-200 dark:border-slate-800;
+  }
+
+  body {
+    @apply bg-slate-50 text-slate-900 dark:bg-slate-900 dark:text-slate-100 transition-colors duration-200;
+  }
+}
+
+@layer components {
+  .emerald-gradient {
+    @apply bg-emerald-500;
+  }
+
+  .brand-bg {
+    background-color: rgb(var(--brand-600));
+  }
+
+  .brand-text {
+    color: rgb(var(--brand-600));
+  }
+
+  .card-shadow {
+    @apply shadow-sm hover:shadow-md transition-shadow duration-200;
+  }
+
+  .brand-focus {
+    @apply focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:ring-opacity-50;
+  }
+
+  .chat-bubble-enter {
+    animation: slideInUp 0.3s ease-out;
+  }
+
+  @keyframes slideInUp {
+    from {
+      opacity: 0;
+      transform: translateY(10px);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
+
+  .tab-underline {
+    @apply relative after:absolute after:bottom-0 after:left-0 after:h-0.5 after:bg-emerald-500 after:transition-all after:duration-300;
+  }
+
+  .tab-underline.active::after {
+    @apply w-full;
+  }
+
+  .tab-underline:not(.active)::after {
+    @apply w-0;
+  }
+}
