@@ -26,19 +26,19 @@ export default function Home() {
   const [mode, setMode] = useState<'form' | 'chat'>('chat');
   const [hasUserInput, setHasUserInput] = useState(false);
   const [profile, setProfile] = useState<Profile>({});
-  const [activeTab, setActiveTab] = useState<'available' | 'filtered' | 'close'>('available');
+  const [activeTab, setActiveTab] = useState<'qualified' | 'notQualified' | 'needMoreInfo'>('qualified');
   const [filtering, setFiltering] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
   const [products, setProducts] = useState<Product[]>([]);
   const [loadingProducts, setLoadingProducts] = useState(true);
   const [matches, setMatches] = useState<{ 
-    available: Product[]; 
-    filtered: Array<{ product: Product; reasons: string[] }>; 
-    closeMatches: Array<{ product: Product; reasons: string[]; improvements: string[] }>;
+    qualified: Product[]; 
+    notQualified: Array<{ product: Product; reasons: string[] }>; 
+    needMoreInfo: Array<{ product: Product; reasons: string[]; improvements: string[] }>;
   }>({
-    available: [],
-    filtered: [],
-    closeMatches: [],
+    qualified: [],
+    notQualified: [],
+    needMoreInfo: [],
   });
   const [matchReasons, setMatchReasons] = useState<Record<string, string[]>>({});
   const [selectedProduct, setSelectedProduct] = useState<Product | null>(null);
@@ -165,7 +165,7 @@ export default function Home() {
       
       const newReasons: Record<string, string[]> = {};
       
-      for (const product of result.available) {
+      for (const product of result.qualified) {
         const deterministic: string[] = [];
         
         if (profile.yearsTrading && profile.yearsTrading >= product.minYears) {
@@ -204,7 +204,7 @@ export default function Home() {
       setIsProcessing(true);
       
       // Use frontend OpenAI client
-      const data = await FrankAI.chat(message, chatHistory || [], profile);
+      const data = await FrankAI.chat(message, chatHistory || [], profile, products);
       console.log('Frank AI response:', data);
       
       if (data.extracted && Object.keys(data.extracted).length > 0) {
@@ -277,9 +277,9 @@ export default function Home() {
     setProfile({});
     setHasUserInput(false);
     setMatches({
-      available: [],
-      filtered: [],
-      closeMatches: [],
+      qualified: [],
+      notQualified: [],
+      needMoreInfo: [],
     });
     setMatchReasons({});
     setFiltering(false);
@@ -607,16 +607,16 @@ export default function Home() {
                     <p className="text-sm text-slate-600 dark:text-slate-400 transition-colors duration-200">Live results personalized to your business</p>
                   </div>
                   <MatchesTabs
-                    availableCount={matches.available.length}
-                    filteredCount={matches.filtered.length}
-                    closeMatchCount={matches.closeMatches.length}
+                    qualifiedCount={matches.qualified.length}
+                    notQualifiedCount={matches.notQualified.length}
+                    needMoreInfoCount={matches.needMoreInfo.length}
                     activeTab={activeTab}
                     onTabChange={setActiveTab}
                   />
 
                   <div className="flex-1 overflow-y-auto mt-6">
                     <AnimatePresence mode="wait">
-                      {isProcessing && matches.available.length === 0 ? (
+                      {isProcessing && matches.qualified.length === 0 ? (
                         <motion.div
                           key="processing"
                           initial={{ opacity: 0 }}
@@ -634,16 +634,16 @@ export default function Home() {
                             </div>
                           </div>
                         </motion.div>
-                      ) : activeTab === 'available' ? (
+                      ) : activeTab === 'qualified' ? (
                         <motion.div
-                          key="available"
+                          key="qualified"
                           initial={{ opacity: 0 }}
                           animate={{ opacity: 1 }}
                           exit={{ opacity: 0 }}
                           className="space-y-4"
                         >
-                          {matches.available.length > 0 ? (
-                            matches.available.map((product, index) => (
+                          {matches.qualified.length > 0 ? (
+                            matches.qualified.map((product, index) => (
                               <MatchCard
                                 key={product.id}
                                 product={product}
@@ -687,7 +687,7 @@ export default function Home() {
                             </div>
                           )}
                         </motion.div>
-                      ) : activeTab === 'close' ? (
+                      ) : activeTab === 'needMoreInfo' ? (
                         <motion.div
                           key="close"
                           initial={{ opacity: 0 }}
@@ -695,8 +695,8 @@ export default function Home() {
                           exit={{ opacity: 0 }}
                           className="space-y-4"
                         >
-                          {matches.closeMatches.length > 0 ? (
-                            matches.closeMatches.map((item, index) => (
+                          {matches.needMoreInfo.length > 0 ? (
+                            matches.needMoreInfo.map((item, index) => (
                               <CloseMatchCard
                                 key={item.product.id}
                                 product={item.product}
@@ -713,14 +713,14 @@ export default function Home() {
                         </motion.div>
                       ) : (
                         <motion.div
-                          key="filtered"
+                          key="notQualified"
                           initial={{ opacity: 0 }}
                           animate={{ opacity: 1 }}
                           exit={{ opacity: 0 }}
                           className="space-y-4"
                         >
-                          {matches.filtered.length > 0 ? (
-                            matches.filtered.map((item, index) => (
+                          {matches.notQualified.length > 0 ? (
+                            matches.notQualified.map((item, index) => (
                               <FilteredCard
                                 key={item.product.id}
                                 product={item.product}
@@ -746,25 +746,25 @@ export default function Home() {
             <div className="md:col-span-3 md:sticky md:top-8 md:h-[calc(100vh-8rem)]">
               <div className="bg-white dark:bg-slate-800 rounded-2xl shadow-sm border border-slate-100 dark:border-slate-700 p-6 h-full flex flex-col transition-colors duration-200">
                 <MatchesTabs
-                  availableCount={matches.available.length}
-                  filteredCount={matches.filtered.length}
-                  closeMatchCount={matches.closeMatches.length}
+                  qualifiedCount={matches.qualified.length}
+                  notQualifiedCount={matches.notQualified.length}
+                  needMoreInfoCount={matches.needMoreInfo.length}
                   activeTab={activeTab}
                   onTabChange={setActiveTab}
                 />
 
                 <div className="flex-1 overflow-y-auto mt-6">
                   <AnimatePresence mode="wait">
-                    {activeTab === 'available' ? (
+                    {activeTab === 'qualified' ? (
                       <motion.div
-                        key="available"
+                        key="qualified"
                         initial={{ opacity: 0 }}
                         animate={{ opacity: 1 }}
                         exit={{ opacity: 0 }}
                         className="space-y-4"
                       >
-                        {matches.available.length > 0 ? (
-                          matches.available.map((product, index) => (
+                        {matches.qualified.length > 0 ? (
+                          matches.qualified.map((product, index) => (
                             <MatchCard
                               key={product.id}
                               product={product}
@@ -783,7 +783,7 @@ export default function Home() {
                           </div>
                         )}
                       </motion.div>
-                    ) : activeTab === 'close' ? (
+                    ) : activeTab === 'needMoreInfo' ? (
                       <motion.div
                         key="close"
                         initial={{ opacity: 0 }}
@@ -791,8 +791,8 @@ export default function Home() {
                         exit={{ opacity: 0 }}
                         className="space-y-4"
                       >
-                        {matches.closeMatches.length > 0 ? (
-                          matches.closeMatches.map((item, index) => (
+                        {matches.needMoreInfo.length > 0 ? (
+                          matches.needMoreInfo.map((item, index) => (
                             <CloseMatchCard
                               key={item.product.id}
                               product={item.product}
@@ -809,14 +809,14 @@ export default function Home() {
                       </motion.div>
                     ) : (
                       <motion.div
-                        key="filtered"
+                        key="notQualified"
                         initial={{ opacity: 0 }}
                         animate={{ opacity: 1 }}
                         exit={{ opacity: 0 }}
                         className="space-y-4"
                       >
-                        {matches.filtered.length > 0 ? (
-                          matches.filtered.map((item, index) => (
+                        {matches.notQualified.length > 0 ? (
+                          matches.notQualified.map((item, index) => (
                             <FilteredCard
                               key={item.product.id}
                               product={item.product}
@@ -852,13 +852,13 @@ export default function Home() {
             title="View recommendations"
           >
             <MessageSquare size={24} />
-            {matches.available.length > 0 && (
+            {matches.qualified.length > 0 && (
               <motion.div
                 initial={{ scale: 0 }}
                 animate={{ scale: 1 }}
                 className="absolute -top-2 -right-2 w-6 h-6 bg-red-500 text-white text-xs font-bold rounded-full flex items-center justify-center"
               >
-                {matches.available.length}
+                {matches.qualified.length}
               </motion.div>
             )}
           </motion.button>
@@ -905,25 +905,25 @@ export default function Home() {
               <div className="flex-1 overflow-y-auto">
                 <div className="p-6">
                   <MatchesTabs
-                    availableCount={matches.available.length}
-                    filteredCount={matches.filtered.length}
-                    closeMatchCount={matches.closeMatches.length}
+                    qualifiedCount={matches.qualified.length}
+                    notQualifiedCount={matches.notQualified.length}
+                    needMoreInfoCount={matches.needMoreInfo.length}
                     activeTab={activeTab}
                     onTabChange={setActiveTab}
                   />
 
                   <div className="mt-6">
                     <AnimatePresence mode="wait">
-                      {activeTab === 'available' ? (
+                      {activeTab === 'qualified' ? (
                         <motion.div
-                          key="available"
+                          key="qualified"
                           initial={{ opacity: 0 }}
                           animate={{ opacity: 1 }}
                           exit={{ opacity: 0 }}
                           className="space-y-4"
                         >
-                          {matches.available.length > 0 ? (
-                            matches.available.map((product, index) => (
+                          {matches.qualified.length > 0 ? (
+                            matches.qualified.map((product, index) => (
                               <MatchCard
                                 key={product.id}
                                 product={product}
@@ -949,7 +949,7 @@ export default function Home() {
                             </div>
                           )}
                         </motion.div>
-                      ) : activeTab === 'close' ? (
+                      ) : activeTab === 'needMoreInfo' ? (
                         <motion.div
                           key="close"
                           initial={{ opacity: 0 }}
@@ -957,8 +957,8 @@ export default function Home() {
                           exit={{ opacity: 0 }}
                           className="space-y-4"
                         >
-                          {matches.closeMatches.length > 0 ? (
-                            matches.closeMatches.map((item, index) => (
+                          {matches.needMoreInfo.length > 0 ? (
+                            matches.needMoreInfo.map((item, index) => (
                               <CloseMatchCard
                                 key={item.product.id}
                                 product={item.product}
@@ -978,14 +978,14 @@ export default function Home() {
                         </motion.div>
                       ) : (
                         <motion.div
-                          key="filtered"
+                          key="notQualified"
                           initial={{ opacity: 0 }}
                           animate={{ opacity: 1 }}
                           exit={{ opacity: 0 }}
                           className="space-y-4"
                         >
-                          {matches.filtered.length > 0 ? (
-                            matches.filtered.map((item, index) => (
+                          {matches.notQualified.length > 0 ? (
+                            matches.notQualified.map((item, index) => (
                               <FilteredCard
                                 key={item.product.id}
                                 product={item.product}
@@ -998,7 +998,7 @@ export default function Home() {
                               <div className="w-12 h-12 bg-slate-100 dark:bg-slate-800 rounded-2xl flex items-center justify-center mx-auto mb-3">
                                 <span className="text-2xl">✅</span>
                               </div>
-                              <p className="text-slate-700 dark:text-slate-300 font-medium">Nothing filtered out</p>
+                              <p className="text-slate-700 dark:text-slate-300 font-medium">All lenders qualify so far</p>
                             </div>
                           )}
                         </motion.div>

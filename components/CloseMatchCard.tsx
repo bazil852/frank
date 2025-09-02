@@ -27,7 +27,14 @@ export default function CloseMatchCard({ product, reasons, improvements, index }
             {product.provider.charAt(0)}
           </div>
           <div>
-            <h3 className="font-bold text-slate-900 dark:text-slate-100 text-lg group-hover:text-amber-700 dark:group-hover:text-amber-400 transition-colors">{product.provider}</h3>
+            <div className="flex items-center gap-3">
+              <h3 className="font-bold text-slate-900 dark:text-slate-100 text-lg group-hover:text-amber-700 dark:group-hover:text-amber-400 transition-colors">{product.provider}</h3>
+              {product.interestRate && (
+                <span className="bg-amber-100 dark:bg-amber-900/40 text-amber-800 dark:text-amber-300 px-2 py-1 rounded-lg text-xs font-semibold">
+                  {product.interestRate[0]}%-{product.interestRate[1]}%
+                </span>
+              )}
+            </div>
             <p className="text-sm text-slate-500 dark:text-slate-400 font-medium mt-1 transition-colors">
               {product.productType} • R{(product.amountMin / 1000).toFixed(0)}k-R{(product.amountMax / 1000).toFixed(0)}k
             </p>

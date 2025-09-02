@@ -12,6 +12,7 @@ export type Product = {
   sectorExclusions?: string[];
   speedDays: [number, number];
   collateralRequired?: boolean;
+  interestRate?: [number, number]; // [min, max] annual percentage rates
   notes?: string;
 };
 
@@ -27,6 +28,7 @@ export const PRODUCTS: Product[] = [
     minMonthlyTurnover: 200000,
     vatRequired: true,
     speedDays: [3, 5],
+    interestRate: [12, 18],
     notes: 'Fast approval for VAT-registered businesses with consistent cashflow'
   },
   {
@@ -40,6 +42,7 @@ export const PRODUCTS: Product[] = [
     minMonthlyTurnover: 100000,
     vatRequired: false,
     speedDays: [1, 2],
+    interestRate: [20, 35],
     notes: 'Quick funding against future card sales, perfect for retail and hospitality'
   },
   {
@@ -54,6 +57,7 @@ export const PRODUCTS: Product[] = [
     vatRequired: false,
     speedDays: [2, 3],
     provincesAllowed: ['Gauteng', 'Western Cape', 'KZN'],
+    interestRate: [14, 22],
     notes: 'Flexible terms for growing SMEs in major metros'
   },
   {

@@ -25,7 +25,14 @@ export default function FilteredCard({ product, reasons, index }: FilteredCardPr
             {product.provider.charAt(0)}
           </div>
           <div>
-            <h3 className="font-bold text-slate-700 dark:text-slate-300 text-lg transition-colors">{product.provider}</h3>
+            <div className="flex items-center gap-3">
+              <h3 className="font-bold text-slate-700 dark:text-slate-300 text-lg transition-colors">{product.provider}</h3>
+              {product.interestRate && (
+                <span className="bg-slate-200 dark:bg-slate-700 text-slate-600 dark:text-slate-400 px-2 py-1 rounded-lg text-xs font-semibold">
+                  {product.interestRate[0]}%-{product.interestRate[1]}%
+                </span>
+              )}
+            </div>
             <p className="text-sm text-slate-500 font-medium mt-1">
               {product.productType} • R{(product.amountMin / 1000).toFixed(0)}k-R{(product.amountMax / 1000).toFixed(0)}k
             </p>

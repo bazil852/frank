@@ -21,7 +21,7 @@ type FilteredProduct = {
   reasons: string[];
 };
 
-type CloseMatchProduct = {
+type NeedMoreInfoProduct = {
   product: Product;
   reasons: string[];
   improvements: string[];
@@ -33,13 +33,13 @@ export function filterProducts(
   profile: Profile,
   products: Product[]
 ): {
-  available: Product[];
-  filtered: FilteredProduct[];
-  closeMatches: CloseMatchProduct[];
+  qualified: Product[];
+  notQualified: FilteredProduct[];
+  needMoreInfo: NeedMoreInfoProduct[];
 } {
-  const available: ScoredProduct[] = [];
-  const filtered: FilteredProduct[] = [];
-  const closeMatches: CloseMatchProduct[] = [];
+  const qualified: ScoredProduct[] = [];
+  const notQualified: FilteredProduct[] = [];
+  const needMoreInfo: NeedMoreInfoProduct[] = [];
 
   products.forEach((product) => {
     const reasons: string[] = [];
@@ -139,20 +139,20 @@ export function filterProducts(
         }
       }
 
-      available.push({ ...product, score });
+      qualified.push({ ...product, score });
     } else if (reasons.length === 0 && improvements.length > 0) {
-      // Close match - has potential improvements but no hard blockers
-      closeMatches.push({ product, reasons: [], improvements });
+      // Need more info - has potential improvements but no hard blockers
+      needMoreInfo.push({ product, reasons: [], improvements });
     } else if (improvements.length > 0 && reasons.length <= 1) {
-      // Close match - mostly fixable issues with maybe one minor blocker
-      closeMatches.push({ product, reasons, improvements });
+      // Need more info - mostly fixable issues with maybe one minor blocker
+      needMoreInfo.push({ product, reasons, improvements });
     } else {
-      // Filtered out - too many issues or hard blockers
-      filtered.push({ product, reasons });
+      // Not qualified - too many issues or hard blockers
+      notQualified.push({ product, reasons });
     }
   });
 
-  available.sort((a, b) => {
+  qualified.sort((a, b) => {
     if (Math.abs(a.score - b.score) > 0.01) {
       return b.score - a.score;
     }
@@ -160,8 +160,8 @@ export function filterProducts(
   });
 
   return {
-    available: available.map(({ score, ...product }) => product),
-    filtered,
-    closeMatches
+    qualified: qualified.map(({ score, ...product }) => product),
+    notQualified,
+    needMoreInfo
   };
 }

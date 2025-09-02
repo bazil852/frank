@@ -102,7 +102,7 @@ export default function ChatUI({
             setMessages([{
               id: '1',
               type: 'bot',
-              content: 'I\'m Frank — the shortcut to funding that actually lands. No dead ends, no 30-page forms.\n\nTell me a bit about your business — how long you\'ve been running, your turnover, and if you\'re registered. The more you share, the faster I can match you.',
+              content: 'I\'m Frank — I show you what funding you actually qualify for. No BS, no dead ends.\n\nHere\'s how I help:\n\n**Check eligibility** → I stack your business up against what lenders are actually looking for — revenue, time trading, VAT, collateral. If you\'re in, you\'re in. If not, at least you know before wasting time.\n\n**Find your fit** → From the options you qualify for, we talk through which ones make the most sense for you — whether you care more about speed, size, or cost.\n\n**Explain stuff** → If something sounds like finance-speak (like "working capital facility"), I\'ll strip it back to plain English.\n\n**Enable applications** → Ready to go? I set you up to apply to one or all your options in one shot — no juggling forms, no repeated paperwork.\n\nNow, tell me about your business — how long you\'ve been running, your turnover, and if you\'re registered. The more you share, the faster I can get you matched.',
               timestamp: new Date(),
             }]);
           }
@@ -111,7 +111,7 @@ export default function ChatUI({
           setMessages([{
             id: '1',
             type: 'bot',
-            content: 'I\'m Frank — the shortcut to funding that actually lands. No dead ends, no 30-page forms.\n\nTell me a bit about your business — how long you\'ve been running, your turnover, and if you\'re registered. The more you share, the faster I can match you.',
+            content: 'I\'m Frank — I show you what funding you actually qualify for. No BS, no dead ends.\n\nHere\'s how I help:\n\n**Check eligibility** → I stack your business up against what lenders are actually looking for — revenue, time trading, VAT, collateral. If you\'re in, you\'re in. If not, at least you know before wasting time.\n\n**Find your fit** → From the options you qualify for, we talk through which ones make the most sense for you — whether you care more about speed, size, or cost.\n\n**Explain stuff** → If something sounds like finance-speak (like "working capital facility"), I\'ll strip it back to plain English.\n\n**Enable applications** → Ready to go? I set you up to apply to one or all your options in one shot — no juggling forms, no repeated paperwork.\n\nNow, tell me about your business — how long you\'ve been running, your turnover, and if you\'re registered. The more you share, the faster I can get you matched.',
             timestamp: new Date(),
           }]);
         }
@@ -121,7 +121,7 @@ export default function ChatUI({
         setMessages([{
           id: '1',
           type: 'bot',
-          content: 'I\'m Frank — the shortcut to funding that actually lands. No dead ends, no 30-page forms.\n\nTell me a bit about your business — how long you\'ve been running, your turnover, and if you\'re registered. The more you share, the faster I can match you.',
+          content: 'I\'m Frank — I show you what funding you actually qualify for. No BS, no dead ends.\n\nHere\'s how I help:\n\n**Check eligibility** → I stack your business up against what lenders are actually looking for — revenue, time trading, VAT, collateral. If you\'re in, you\'re in. If not, at least you know before wasting time.\n\n**Find your fit** → From the options you qualify for, we talk through which ones make the most sense for you — whether you care more about speed, size, or cost.\n\n**Explain stuff** → If something sounds like finance-speak (like "working capital facility"), I\'ll strip it back to plain English.\n\n**Enable applications** → Ready to go? I set you up to apply to one or all your options in one shot — no juggling forms, no repeated paperwork.\n\nNow, tell me about your business — how long you\'ve been running, your turnover, and if you\'re registered. The more you share, the faster I can get you matched.',
           timestamp: new Date(),
         }]);
       } finally {
@@ -205,7 +205,7 @@ export default function ChatUI({
       setMessages([{
         id: '1',
         type: 'bot',
-        content: 'I\'m Frank — the shortcut to funding that actually lands. No dead ends, no 30-page forms.\n\nTell me a bit about your business — how long you\'ve been running, your turnover, and if you\'re registered. The more you share, the faster I can match you.',
+        content: 'I\'m Frank — I show you what funding you actually qualify for. No BS, no dead ends.\n\nHere\'s how I help:\n\n**Check eligibility** → I stack your business up against what lenders are actually looking for — revenue, time trading, VAT, collateral. If you\'re in, you\'re in. If not, at least you know before wasting time.\n\n**Find your fit** → From the options you qualify for, we talk through which ones make the most sense for you — whether you care more about speed, size, or cost.\n\n**Explain stuff** → If something sounds like finance-speak (like "working capital facility"), I\'ll strip it back to plain English.\n\n**Enable applications** → Ready to go? I set you up to apply to one or all your options in one shot — no juggling forms, no repeated paperwork.\n\nNow, tell me about your business — how long you\'ve been running, your turnover, and if you\'re registered. The more you share, the faster I can get you matched.',
         timestamp: new Date(),
       }]);
       

@@ -4,24 +4,24 @@ import { motion } from 'framer-motion';
 import { useState } from 'react';
 
 interface MatchesTabsProps {
-  availableCount: number;
-  filteredCount: number;
-  closeMatchCount: number;
-  activeTab: 'available' | 'filtered' | 'close';
-  onTabChange: (tab: 'available' | 'filtered' | 'close') => void;
+  qualifiedCount: number;
+  notQualifiedCount: number;
+  needMoreInfoCount: number;
+  activeTab: 'qualified' | 'needMoreInfo' | 'notQualified';
+  onTabChange: (tab: 'qualified' | 'needMoreInfo' | 'notQualified') => void;
 }
 
 export default function MatchesTabs({
-  availableCount,
-  filteredCount,
-  closeMatchCount,
+  qualifiedCount,
+  notQualifiedCount,
+  needMoreInfoCount,
   activeTab,
   onTabChange,
 }: MatchesTabsProps) {
   const tabs = [
-    { id: 'available', label: `Available`, count: availableCount, color: 'brand' },
-    { id: 'close', label: `Close`, count: closeMatchCount, color: 'amber' },
-    { id: 'filtered', label: `Filtered`, count: filteredCount, color: 'slate' },
+    { id: 'qualified', label: `Qualified`, count: qualifiedCount, color: 'brand', description: 'You meet the hard criteria' },
+    { id: 'needMoreInfo', label: `Need More Info`, count: needMoreInfoCount, color: 'amber', description: 'Missing details' },
+    { id: 'notQualified', label: `Not Qualified`, count: notQualifiedCount, color: 'slate', description: 'Below minimum requirements' },
   ];
 
   const activeIndex = tabs.findIndex(tab => tab.id === activeTab);
@@ -32,7 +32,7 @@ export default function MatchesTabs({
         {tabs.map((tab) => (
           <motion.button
             key={tab.id}
-            onClick={() => onTabChange(tab.id as 'available' | 'filtered' | 'close')}
+            onClick={() => onTabChange(tab.id as 'qualified' | 'needMoreInfo' | 'notQualified')}
             whileHover={{ scale: 1.02 }}
             whileTap={{ scale: 0.98 }}
             className={`relative flex-1 py-3 px-4 rounded-xl text-sm font-semibold transition-all duration-200 ${
