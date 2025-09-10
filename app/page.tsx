@@ -25,6 +25,7 @@ export default function Home() {
   const { userId, sessionId, trackEvent, trackApplication } = useUserTracking();
   const [mode, setMode] = useState<'form' | 'chat'>('chat');
   const [hasUserInput, setHasUserInput] = useState(false);
+  const [hasFirstResponse, setHasFirstResponse] = useState(false);
   const [profile, setProfile] = useState<Profile>({});
   const [activeTab, setActiveTab] = useState<'qualified' | 'notQualified' | 'needMoreInfo'>('qualified');
   const [filtering, setFiltering] = useState(false);
@@ -150,6 +151,12 @@ export default function Home() {
     loadUserProfile();
   }, [userId]);
 
+  // Monitor hasFirstResponse state changes for debugging
+  useEffect(() => {
+    console.log('🎭 hasFirstResponse state changed to:', hasFirstResponse);
+    console.log('🎭 Panel should be:', hasFirstResponse ? 'UNBLURRED' : 'BLURRED');
+  }, [hasFirstResponse]);
+
   useEffect(() => {
     if (loadingProducts || products.length === 0) return;
     
@@ -178,11 +185,11 @@ export default function Home() {
           }
         }
         
-        // Only call GPT if we have profile data to work with
+        // Temporarily disable GPT rationale calls to prevent excessive API usage
         let gptReason = 'Good fit for your business needs';
-        if (hasProfileData) {
-          gptReason = await fetchProductReasons(product, profile);
-        }
+        // if (hasProfileData) {
+        //   gptReason = await fetchProductReasons(product, profile);
+        // }
         
         newReasons[product.id] = [
           ...deterministic.slice(0, 2),
@@ -200,11 +207,14 @@ export default function Home() {
 
   const handleChatMessage = async (message: string, chatHistory?: Array<{role: 'system' | 'user' | 'assistant', content: string}>, personality?: string): Promise<string> => {
     try {
-      console.log('Processing chat message:', message);
+      console.log('💬 Starting handleChatMessage with:', { message, hasFirstResponse, hasUserInput });
       setIsProcessing(true);
       
+      // Get current match results for AI context
+      const currentMatches = filterProducts(profile, products);
+      
       // Use frontend OpenAI client
-      const data = await FrankAI.chat(message, chatHistory || [], profile, products);
+      const data = await FrankAI.chat(message, chatHistory || [], profile, products, currentMatches);
       console.log('Frank AI response:', data);
       
       if (data.extracted && Object.keys(data.extracted).length > 0) {
@@ -239,6 +249,26 @@ export default function Home() {
           amountRequested: updatedProfile.amountRequested
         });
         
+        // First, check if we should unblur the panel (before any early returns)
+        if (!hasFirstResponse && data.extracted && Object.keys(data.extracted).length > 0) {
+          console.log('🔍 UNBLUR CHECK - Current state:', {
+            hasFirstResponse,
+            hasUserInput,
+            isProcessing
+          });
+          
+          console.log('🔍 UNBLUR CHECK - Response data:', {
+            hasExtracted: !!data.extracted,
+            extractedKeys: data.extracted ? Object.keys(data.extracted) : [],
+            extractedCount: data.extracted ? Object.keys(data.extracted).length : 0,
+            extractedData: data.extracted
+          });
+          
+          console.log('✅ UNBLURRING: All conditions met!');
+          console.log('✅ Setting hasFirstResponse from false to true');
+          setHasFirstResponse(true);
+        }
+
         if (filledFields >= 3) {
           console.log('Have enough fields (3+)! Setting hasUserInput to true');
           
@@ -251,12 +281,12 @@ export default function Home() {
             setTimeout(() => {
               setHasUserInput(true);
             }, 100);
+            
+            // Use the OpenAI response since it's more detailed and relevant
             setIsProcessing(false);
-            if (filledFields === 4) {
-              return 'Perfect! I have all the essential information. Your funding matches are now appearing on the right. Feel free to tell me more to refine your results.';
-            } else {
-              return 'Great! I have enough information to show you some matches. Your funding options are now appearing on the right. Share any missing details to get better matches.';
-            }
+            const finalResponse = data.summary || 'Got it — I\'ll tune your matches based on your needs';
+            console.log('💬 Completed handleChatMessage with early return. Final state:', { hasFirstResponse, hasUserInput, finalResponse });
+            return finalResponse;
           }
         } else {
           console.log(`Still need more fields (have ${filledFields}/4, need 3+)`);
@@ -264,9 +294,12 @@ export default function Home() {
       }
       
       setIsProcessing(false);
-      return data.summary || 'Got it — I\'ll tune your matches based on your needs';
+      
+      const finalResponse = data.summary || 'Got it — I\'ll tune your matches based on your needs';
+      console.log('💬 Completed handleChatMessage. Final state:', { hasFirstResponse, hasUserInput, finalResponse });
+      return finalResponse;
     } catch (error) {
-      console.error('Error calling GPT API:', error);
+      console.error('❌ Error calling GPT API:', error);
       setIsProcessing(false);
       return 'Got it — I\'ll tune your matches based on your needs';
     }
@@ -276,6 +309,7 @@ export default function Home() {
     // Reset all local state
     setProfile({});
     setHasUserInput(false);
+    setHasFirstResponse(false);
     setMatches({
       qualified: [],
       notQualified: [],
@@ -397,7 +431,7 @@ export default function Home() {
           layout
           transition={{ duration: 0.6, ease: "easeInOut" }}
           className={`grid grid-cols-1 gap-8 ${
-          hasUserInput && mode === 'chat' 
+          mode === 'chat' 
             ? expandedPanel === 'chat' 
               ? 'md:grid-cols-1' 
               : expandedPanel === 'matches'
@@ -413,7 +447,7 @@ export default function Home() {
             }}
             transition={{ duration: 0.5, ease: "easeInOut" }}
             className={`space-y-6 ${
-            hasUserInput && mode === 'chat' 
+            mode === 'chat' 
               ? expandedPanel === 'matches' 
                 ? 'hidden md:hidden' 
                 : expandedPanel === 'chat'
@@ -553,14 +587,15 @@ export default function Home() {
           </motion.div>
 
           <AnimatePresence>
-            {hasUserInput && mode === 'chat' && (
+            {mode === 'chat' && (
               <motion.div
                 layout
                 initial={{ opacity: 0, x: 100 }}
                 animate={{ 
                   opacity: expandedPanel === 'chat' ? 0 : 1, 
                   x: 0,
-                  scale: expandedPanel === 'chat' ? 0.95 : 1
+                  scale: expandedPanel === 'chat' ? 0.95 : 1,
+                  filter: hasFirstResponse ? 'blur(0px)' : 'blur(8px)'
                 }}
                 exit={{ opacity: 0, x: 100, scale: 0.95 }}
                 transition={{ 
@@ -579,8 +614,26 @@ export default function Home() {
                 <motion.div 
                   layout
                   transition={{ duration: 0.3 }}
-                  className="bg-white dark:bg-slate-800 rounded-2xl shadow-sm border border-slate-100 dark:border-slate-700 p-6 h-full flex flex-col transition-colors duration-200"
+                  className="bg-white dark:bg-slate-800 rounded-2xl shadow-sm border border-slate-100 dark:border-slate-700 p-6 h-full flex flex-col transition-colors duration-200 relative"
                 >
+                  <AnimatePresence>
+                    {!hasFirstResponse && (
+                      <motion.div
+                        initial={{ opacity: 0 }}
+                        animate={{ opacity: 1 }}
+                        exit={{ opacity: 0 }}
+                        className="absolute inset-0 bg-slate-50/80 dark:bg-slate-800/80 rounded-2xl flex items-center justify-center backdrop-blur-sm z-10"
+                      >
+                        <div className="text-center space-y-2">
+                          <div className="w-12 h-12 bg-brand-100 dark:bg-brand-900 rounded-2xl flex items-center justify-center mx-auto">
+                            <span className="text-2xl">💬</span>
+                          </div>
+                          <p className="text-sm font-medium text-slate-700 dark:text-slate-300">Start chatting to see your matches</p>
+                          <p className="text-xs text-slate-500 dark:text-slate-400">Tell Frank about your business needs</p>
+                        </div>
+                      </motion.div>
+                    )}
+                  </AnimatePresence>
                   <div className="mb-6">
                     <div className="flex items-center justify-between mb-2">
                       <div className="flex items-center gap-3">

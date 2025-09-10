@@ -141,7 +141,7 @@ For a greeting like "hey" with no business info, respond like:
     ].filter(msg => msg.content && msg.content.trim() !== '');
     
     const completion = await openai.chat.completions.create({
-      model: 'gpt-4o',
+      model: 'gpt-5',
       messages,
       temperature: 0.1, // Very low temperature for strict JSON formatting
       max_tokens: 400,

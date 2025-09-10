@@ -1,6 +1,6 @@
 import OpenAI from 'openai';
 import type { ChatCompletionMessageParam } from 'openai/resources/chat/completions';
-import { Profile } from './filters';
+import { Profile, filterProducts } from './filters';
 import { Product } from './catalog';
 
 // Initialize OpenAI client for frontend use
@@ -45,6 +45,7 @@ Now, tell me about your business — how long you've been running, your turnover
 - Set expectations: "I'll check who you qualify for. Some lenders are stricter than others, but I'll explain as we go."
 - Parse user responses for multiple fields at once - capture ALL information immediately (don't re-ask)
 - ALWAYS narrate impact when you get new info: "Great — that unlocked 3 lenders into your Qualified tab." or "Still missing VAT info. That's holding back 2 more lenders."
+- ALWAYS mention current match results: Tell users what they qualified for, what they didn't, and why
 
 2. LAYERED CRITERIA APPROACH:
 
@@ -98,15 +99,26 @@ Use: "I need 3 quick details: How long trading? Monthly revenue? What's your ind
     message: string,
     chatHistory: Array<{ role: 'user' | 'assistant' | 'system'; content: string }> = [],
     profile: Partial<Profile> = {},
-    availableProducts: Product[] = []
+    availableProducts: Product[] = [],
+    currentMatches?: {
+      qualified: Product[];
+      notQualified: Array<{ product: Product; reasons: string[] }>;
+      needMoreInfo: Array<{ product: Product; reasons: string[]; improvements: string[] }>;
+    }
   ): Promise<GPTResponse> {
     try {
       // Check if API key exists
       if (!process.env.NEXT_PUBLIC_OPENAI_API_KEY) {
-        console.log('No OpenAI API key configured, using fallback response');
+        console.log('⚠️ No OpenAI API key configured, using fallback response');
+        const extracted = this.extractBusinessInfo(message);
+        console.log('🔄 Fallback extraction result:', {
+          extracted,
+          extractedKeys: Object.keys(extracted),
+          extractedCount: Object.keys(extracted).length
+        });
         return {
           summary: "I'm Frank — I show you what funding you actually qualify for. Tell me about your business — years trading, turnover, and if you're registered. The more you share, the faster I can get you matched.",
-          extracted: this.extractBusinessInfo(message)
+          extracted
         };
       }
 
@@ -123,12 +135,40 @@ Use: "I need 3 quick details: How long trading? Monthly revenue? What's your ind
           }).join('\n')
         : 'No lender data available';
 
+      // Format current match results for GPT context
+      const matchContext = currentMatches ? {
+        qualified: currentMatches.qualified.map(p => p.provider).join(', '),
+        qualifiedCount: currentMatches.qualified.length,
+        notQualified: currentMatches.notQualified.map(item => `${item.product.provider} (${item.reasons.join('; ')})`).join(', '),
+        notQualifiedCount: currentMatches.notQualified.length,
+        needMoreInfo: currentMatches.needMoreInfo.map(item => `${item.product.provider} (needs: ${item.improvements.join('; ')})`).join(', '),
+        needMoreInfoCount: currentMatches.needMoreInfo.length
+      } : null;
+
+      const matchResultsText = matchContext ? `
+CURRENT MATCH RESULTS:
+- QUALIFIED (${matchContext.qualifiedCount}): ${matchContext.qualified || 'NONE YET'}
+- NEED MORE INFO (${matchContext.needMoreInfoCount}): ${matchContext.needMoreInfo || 'NONE YET'}  
+- NOT QUALIFIED (${matchContext.notQualifiedCount}): ${matchContext.notQualified || 'NONE YET'}
+
+IMPORTANT RESPONSE GUIDELINES:
+- If this is likely the user's first message with business info, DESCRIBE the match results in detail since they can't see the right panel yet
+- Be specific about numbers: "I found X qualified lenders including [names], Y lenders need more info, Z don't qualify"
+- When describing matches, help them understand what each category means
+- Use phrases like "I found", "Here's what I discovered", "Your matches include" rather than assuming they can see the results
+- CRITICAL: Only mention lenders that are ACTUALLY in the lists above. DO NOT hallucinate results.
+` : `
+NO MATCH RESULTS YET - No business profile data has been processed yet.
+
+CRITICAL: Do NOT claim any qualifications or matches until you have actual business information to work with.
+`;
+
       const userPrompt = `User said: "${message}"
 
 CURRENT AVAILABLE LENDERS:
 ${productSummary}
-
-TASK: Respond as Frank and extract any business information.
+${matchResultsText}
+TASK: Respond as Frank and extract any business information. ALWAYS mention current match results in your response.
 
 EXTRACTION FIELDS:
 - industry, monthlyTurnover (number), amountRequested (number), yearsTrading (number)
@@ -137,7 +177,7 @@ EXTRACTION FIELDS:
 
 You must respond with valid JSON only:
 {
-  "summary": "your witty Frank response",
+  "summary": "your witty Frank response that mentions current matches",
   "extracted": {field1: value1, ...}
 }`;
 
@@ -150,7 +190,7 @@ You must respond with valid JSON only:
         { role: 'user', content: userPrompt }
       ];
 
-      console.log('Sending to OpenAI (frontend):', { message, profile });
+      console.log('🤖 Sending to OpenAI (frontend):', { message, profile });
 
       const completion = await openai.chat.completions.create({
         model: 'gpt-4o',
@@ -161,19 +201,28 @@ You must respond with valid JSON only:
       });
 
       const response = completion.choices[0]?.message?.content || '{}';
-      console.log('OpenAI response (frontend):', response);
+      console.log('🤖 OpenAI raw response (frontend):', response);
 
       try {
         const parsed = JSON.parse(response) as GPTResponse;
+        console.log('🤖 Parsed OpenAI response:', {
+          summary: parsed.summary,
+          extracted: parsed.extracted,
+          extractedKeys: parsed.extracted ? Object.keys(parsed.extracted) : [],
+          extractedCount: parsed.extracted ? Object.keys(parsed.extracted).length : 0
+        });
+        
         return {
           summary: parsed.summary || "Let's get you matched with funding. Tell me about your business.",
           extracted: { ...parsed.extracted }
         };
       } catch (error) {
-        console.error('Failed to parse GPT response:', error);
+        console.error('❌ Failed to parse GPT response:', error);
+        const fallbackExtracted = this.extractBusinessInfo(message);
+        console.log('🔄 Using fallback extraction:', fallbackExtracted);
         return {
           summary: "Let's get you matched with funding. Tell me about your business.",
-          extracted: this.extractBusinessInfo(message)
+          extracted: fallbackExtracted
         };
       }
     } catch (error) {
@@ -225,11 +274,17 @@ provide a single bullet point rationale (max 18 words) for why this is a good ma
     const result: Partial<Profile> = {};
     const messageLower = message.toLowerCase();
 
-    // Extract amounts
-    const amountMatches = Array.from(message.matchAll(/R\s*(\d{1,3}(?:,\d{3})*|\d+)k?/gi));
+    console.log('Extracting business info from message:', message);
+
+    // Extract amounts (improved to catch more patterns)
+    const amountMatches = Array.from(message.matchAll(/(\d{1,3}(?:,\d{3})*|\d+)k?/gi));
+    console.log('Found amount matches:', amountMatches);
+    
     for (const match of amountMatches) {
       const rawAmount = match[1].replace(/,/g, '');
-      const amount = match[0].includes('k') ? parseInt(rawAmount) * 1000 : parseInt(rawAmount);
+      const amount = match[0].toLowerCase().includes('k') ? parseInt(rawAmount) * 1000 : parseInt(rawAmount);
+      
+      console.log(`Processing amount: ${match[0]} -> ${amount}`);
       
       if (amount > 1000 && amount < 100000000) {
         const index = match.index || 0;
@@ -237,10 +292,14 @@ provide a single bullet point rationale (max 18 words) for why this is a good ma
         const contextAfter = message.slice(index, Math.min(message.length, index + 50)).toLowerCase();
         const fullContext = contextBefore + contextAfter;
         
+        console.log(`Context for ${amount}: "${fullContext}"`);
+        
         if (!result.monthlyTurnover && (fullContext.includes('turnover') || fullContext.includes('revenue') || fullContext.includes('monthly'))) {
           result.monthlyTurnover = amount;
+          console.log('Set monthlyTurnover:', amount);
         } else if (!result.amountRequested && (fullContext.includes('need') || fullContext.includes('loan') || fullContext.includes('funding'))) {
           result.amountRequested = amount;
+          console.log('Set amountRequested:', amount);
         }
       }
     }
@@ -249,20 +308,36 @@ provide a single bullet point rationale (max 18 words) for why this is a good ma
     const yearsMatch = message.match(/(\d+)\s*years?/i);
     if (yearsMatch) {
       result.yearsTrading = parseInt(yearsMatch[1]);
+      console.log('Set yearsTrading:', result.yearsTrading);
     }
 
     // Extract VAT status
-    if (messageLower.includes('vat registered') || messageLower.includes('registered for vat')) {
+    if (messageLower.includes('vat registered') || messageLower.includes('registered for vat') || messageLower.includes('vat yes')) {
       result.vatRegistered = true;
-    } else if (messageLower.includes('not vat') || messageLower.includes('no vat')) {
+      console.log('Set vatRegistered: true');
+    } else if (messageLower.includes('not vat') || messageLower.includes('no vat') || messageLower.includes('vat no')) {
       result.vatRegistered = false;
+      console.log('Set vatRegistered: false');
     }
 
-    // Extract industry
-    const industries = ['retail', 'manufacturing', 'services', 'technology', 'construction', 'hospitality', 'logistics'];
+    // Extract industry (expanded list)
+    const industries = ['retail', 'manufacturing', 'services', 'technology', 'construction', 'hospitality', 'logistics', 'robotics', 'healthcare', 'finance'];
     for (const industry of industries) {
       if (messageLower.includes(industry)) {
         result.industry = industry.charAt(0).toUpperCase() + industry.slice(1);
+        console.log('Set industry:', result.industry);
+        break;
+      }
+    }
+
+    // Extract provinces
+    const provinces = ['gauteng', 'western cape', 'kzn', 'eastern cape', 'free state', 'north west', 'limpopo', 'mpumalanga', 'northern cape'];
+    for (const province of provinces) {
+      if (messageLower.includes(province)) {
+        result.province = province === 'western cape' ? 'Western Cape' : 
+                         province === 'kzn' ? 'KZN' : 
+                         province.charAt(0).toUpperCase() + province.slice(1);
+        console.log('Set province:', result.province);
         break;
       }
     }
@@ -280,6 +355,7 @@ provide a single bullet point rationale (max 18 words) for why this is a good ma
       result.contact.phone = phoneMatch[1].replace(/\s+/g, '');
     }
 
+    console.log('Final extraction result:', result);
     return result;
   }
 }
