@@ -2,10 +2,11 @@
 
 import { motion, AnimatePresence } from 'framer-motion';
 import { useState, useRef, useEffect } from 'react';
-import { Send, RotateCcw, Sparkles, Maximize2, Minimize2 } from 'lucide-react';
+import { Send, RotateCcw, Sparkles, Maximize2, Minimize2, Mic } from 'lucide-react';
 import { ConversationTracker } from '@/lib/db-conversations';
 import { AnonymousUserTracker } from '@/lib/user-tracking';
 import ChipsBar from './ChipsBar';
+import VoiceModal from './VoiceModal';
 
 function formatMessage(content: string): string {
   return content
@@ -35,6 +36,7 @@ interface ChatUIProps {
   profile?: any;
   showChips?: boolean;
   hideMobileFeatures?: boolean;
+  onProfileUpdate?: (updates: any) => void;
 }
 
 export default function ChatUI({ 
@@ -45,7 +47,8 @@ export default function ChatUI({
   showProfileProgress = false, 
   profile = {}, 
   showChips = false,
-  hideMobileFeatures = false
+  hideMobileFeatures = false,
+  onProfileUpdate
 }: ChatUIProps) {
   const [personality, setPersonality] = useState('Professional and friendly. Be helpful and informative while maintaining a warm tone.');
   const [messages, setMessages] = useState<Message[]>([]);
@@ -53,6 +56,7 @@ export default function ChatUI({
   const [sending, setSending] = useState(false);
   const [loadingHistory, setLoadingHistory] = useState(true);
   const [messageIndex, setMessageIndex] = useState(0);
+  const [showVoiceModal, setShowVoiceModal] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
   const hasLoadedHistory = useRef(false);
 
@@ -375,19 +379,37 @@ export default function ChatUI({
             onKeyDown={(e) => e.key === 'Enter' && handleSend()}
             placeholder="Type your message..."
             disabled={sending}
-            className="w-full px-6 py-4 pr-14 bg-slate-50 dark:bg-slate-700 border border-slate-200 dark:border-slate-600 rounded-2xl focus:outline-none focus:ring-2 focus:ring-brand-600 focus:border-brand-600 disabled:opacity-50 text-slate-900 dark:text-slate-100 placeholder-slate-500 dark:placeholder-slate-400 transition-all duration-200"
+            className="w-full px-6 py-4 pr-24 bg-slate-50 dark:bg-slate-700 border border-slate-200 dark:border-slate-600 rounded-2xl focus:outline-none focus:ring-2 focus:ring-brand-600 focus:border-brand-600 disabled:opacity-50 text-slate-900 dark:text-slate-100 placeholder-slate-500 dark:placeholder-slate-400 transition-all duration-200"
           />
-          <motion.button
-            whileHover={{ scale: 1.05 }}
-            whileTap={{ scale: 0.95 }}
-            onClick={handleSend}
-            disabled={!input.trim() || sending}
-            className="absolute right-2 top-1/2 transform -translate-y-1/2 w-10 h-10 bg-brand-600 rounded-full flex items-center justify-center text-white shadow-sm disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-200"
-          >
-            <Send size={18} />
-          </motion.button>
+          <div className="absolute right-2 top-1/2 transform -translate-y-1/2 flex gap-2">
+            <motion.button
+              whileHover={{ scale: 1.05 }}
+              whileTap={{ scale: 0.95 }}
+              onClick={() => setShowVoiceModal(true)}
+              className="w-10 h-10 bg-slate-200 dark:bg-slate-600 hover:bg-slate-300 dark:hover:bg-slate-500 rounded-full flex items-center justify-center text-slate-700 dark:text-slate-300 shadow-sm transition-all duration-200"
+              title="Voice chat"
+            >
+              <Mic size={18} />
+            </motion.button>
+            <motion.button
+              whileHover={{ scale: 1.05 }}
+              whileTap={{ scale: 0.95 }}
+              onClick={handleSend}
+              disabled={!input.trim() || sending}
+              className="w-10 h-10 bg-brand-600 rounded-full flex items-center justify-center text-white shadow-sm disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-200"
+            >
+              <Send size={18} />
+            </motion.button>
+          </div>
         </div>
       </div>
+      
+      <VoiceModal
+        isOpen={showVoiceModal}
+        onClose={() => setShowVoiceModal(false)}
+        profile={profile}
+        onProfileUpdate={onProfileUpdate}
+      />
     </div>
   );
 }

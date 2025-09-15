@@ -41,13 +41,21 @@ export function filterProducts(
   const notQualified: FilteredProduct[] = [];
   const needMoreInfo: NeedMoreInfoProduct[] = [];
 
+  // Check if we have minimum required information to make meaningful matches
+  const hasMinimumInfo = profile.yearsTrading !== undefined || 
+                        profile.monthlyTurnover !== undefined || 
+                        profile.amountRequested !== undefined;
+
   products.forEach((product) => {
     const reasons: string[] = [];
     const improvements: string[] = [];
+    const missingRequirements: string[] = [];
     let closeMatchCount = 0;
 
-    // Check years trading
-    if (profile.yearsTrading !== undefined && profile.yearsTrading < product.minYears) {
+    // Track missing critical information
+    if (profile.yearsTrading === undefined) {
+      missingRequirements.push(`Requires ${product.minYears}+ years trading history`);
+    } else if (profile.yearsTrading < product.minYears) {
       const yearsDiff = product.minYears - profile.yearsTrading;
       if (yearsDiff <= 1) {
         improvements.push(`Need ${yearsDiff} more year${yearsDiff === 1 ? '' : 's'} trading`);
@@ -58,7 +66,9 @@ export function filterProducts(
     }
 
     // Check monthly turnover
-    if (profile.monthlyTurnover !== undefined && profile.monthlyTurnover < product.minMonthlyTurnover) {
+    if (profile.monthlyTurnover === undefined) {
+      missingRequirements.push(`Requires R${(product.minMonthlyTurnover / 1000).toFixed(0)}k+ monthly turnover`);
+    } else if (profile.monthlyTurnover < product.minMonthlyTurnover) {
       const shortfall = product.minMonthlyTurnover - profile.monthlyTurnover;
       const shortfallPercent = (shortfall / product.minMonthlyTurnover) * 100;
       
@@ -74,10 +84,14 @@ export function filterProducts(
     if (product.vatRequired && profile.vatRegistered === false) {
       improvements.push('Need VAT registration');
       closeMatchCount++;
+    } else if (product.vatRequired && profile.vatRegistered === undefined) {
+      missingRequirements.push('VAT registration status needed');
     }
 
     // Check amount range
-    if (profile.amountRequested !== undefined) {
+    if (profile.amountRequested === undefined) {
+      missingRequirements.push(`Loans from R${(product.amountMin / 1000).toFixed(0)}k to R${(product.amountMax / 1000).toFixed(0)}k`);
+    } else {
       if (profile.amountRequested < product.amountMin) {
         const shortfall = product.amountMin - profile.amountRequested;
         const shortfallPercent = (shortfall / product.amountMin) * 100;
@@ -116,8 +130,17 @@ export function filterProducts(
     }
 
     // Categorize the product
-    if (reasons.length === 0 && improvements.length === 0) {
-      // Perfect match
+    // If we have missing requirements, put in needMoreInfo
+    if (missingRequirements.length > 0) {
+      // Combine missing requirements with any improvements
+      const allImprovements = [...missingRequirements, ...improvements];
+      needMoreInfo.push({ 
+        product, 
+        reasons: reasons, 
+        improvements: allImprovements 
+      });
+    } else if (reasons.length === 0 && improvements.length === 0) {
+      // Perfect match - only if we have enough info AND no issues
       let score = 1.0;
 
       if (profile.amountRequested !== undefined) {

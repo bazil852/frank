@@ -141,6 +141,8 @@ export default function Home() {
           
           if (filledFields >= 3) {
             setHasUserInput(true);
+            // Also unblur the panel since user clearly had a previous conversation
+            setHasFirstResponse(true);
           }
         }
       } catch (error) {
@@ -548,6 +550,7 @@ export default function Home() {
                   profile={profile}
                   showChips={hasUserInput}
                   hideMobileFeatures={true}
+                  onProfileUpdate={updateProfile}
                 />
               </motion.div>
             )}
