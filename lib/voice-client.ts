@@ -83,15 +83,11 @@ export class VoiceClient {
     return new Promise((resolve, reject) => {
       try {
         // Use the session's client secret for WebSocket auth
-        const wsUrl = `wss://api.openai.com/v1/realtime?model=${this.session!.model}`;
-        console.log('Connecting to WebSocket:', wsUrl);
+        // Note: Browser WebSocket doesn't support custom headers, so we pass the token in the URL
+        const wsUrl = `wss://api.openai.com/v1/realtime?model=${this.session!.model}&session_id=${this.session!.id}&client_secret=${this.session!.client_secret}`;
+        console.log('Connecting to WebSocket with model:', this.session!.model);
         
-        this.ws = new WebSocket(wsUrl, [], {
-          headers: {
-            'Authorization': `Bearer ${this.session!.client_secret}`,
-            'OpenAI-Beta': 'realtime=v1'
-          }
-        } as any);
+        this.ws = new WebSocket(wsUrl);
 
         this.ws.onopen = () => {
           console.log('Voice WebSocket connected, sending session update...');
