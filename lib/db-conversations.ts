@@ -280,7 +280,6 @@ export class ConversationTracker {
       });
 
       if (error) throw error;
-      console.log('Updated user business profile:', profileData);
     } catch (error) {
       console.error('Error updating user business profile:', error);
     }

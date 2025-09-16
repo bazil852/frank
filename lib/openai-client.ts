@@ -16,6 +16,7 @@ export interface GPTResponse {
 }
 
 export class FrankAI {
+
   private static systemPrompt = `You are Frank — I show you what funding you actually qualify for. No BS, no dead ends.
 
 PERSONALITY & TONE:
@@ -109,17 +110,8 @@ Use: "I need 3 quick details: How long trading? Monthly revenue? What's your ind
     try {
       // Check if API key exists
       if (!process.env.NEXT_PUBLIC_OPENAI_API_KEY) {
-        console.log('⚠️ No OpenAI API key configured, using fallback response');
-        const extracted = this.extractBusinessInfo(message);
-        console.log('🔄 Fallback extraction result:', {
-          extracted,
-          extractedKeys: Object.keys(extracted),
-          extractedCount: Object.keys(extracted).length
-        });
-        return {
-          summary: "I'm Frank — I show you what funding you actually qualify for. Tell me about your business — years trading, turnover, and if you're registered. The more you share, the faster I can get you matched.",
-          extracted
-        };
+        console.error('❌ NO OPENAI API KEY - Cannot extract data');
+        throw new Error('OpenAI API key required for extraction');
       }
 
       // Format available products for GPT context
@@ -151,28 +143,40 @@ CURRENT MATCH RESULTS:
 - NEED MORE INFO (${matchContext.needMoreInfoCount}): ${matchContext.needMoreInfo || 'NONE YET'}  
 - NOT QUALIFIED (${matchContext.notQualifiedCount}): ${matchContext.notQualified || 'NONE YET'}
 
-IMPORTANT RESPONSE GUIDELINES:
-- If this is likely the user's first message with business info, DESCRIBE the match results in detail since they can't see the right panel yet
-- Be specific about numbers: "I found X qualified lenders including [names], Y lenders need more info, Z don't qualify"
-- When describing matches, help them understand what each category means
-- Use phrases like "I found", "Here's what I discovered", "Your matches include" rather than assuming they can see the results
-- CRITICAL: Only mention lenders that are ACTUALLY in the lists above. DO NOT hallucinate results.
+CRITICAL RESPONSE RULES - FOLLOW THESE EXACTLY:
+- MANDATORY: Use ONLY these exact numbers: QUALIFIED = ${matchContext.qualifiedCount}, NEED MORE INFO = ${matchContext.needMoreInfoCount}, NOT QUALIFIED = ${matchContext.notQualifiedCount}
+- FORBIDDEN: Do NOT say "41 lenders", "many lenders", or any other number except the exact counts above
+- REQUIRED: Always say "I found ${matchContext.qualifiedCount} qualified lenders" or "No lenders are fully qualified yet, but ${matchContext.needMoreInfoCount} need more information"
+- NEVER mention lender names unless they are EXPLICITLY listed in the qualified or needMoreInfo sections above
+- If user already has collateralAcceptable set in their profile, do NOT ask about collateral again
+- You must use the exact numbers provided - this is not optional
 ` : `
 NO MATCH RESULTS YET - No business profile data has been processed yet.
 
 CRITICAL: Do NOT claim any qualifications or matches until you have actual business information to work with.
 `;
 
+      // Format current profile for context
+      const profileContext = Object.keys(profile).length > 0 ? `
+CURRENT USER PROFILE:
+${Object.entries(profile).map(([key, value]) => `- ${key}: ${value}`).join('\n')}
+
+NOTE: Do NOT ask for information that is already in the user's profile above.
+` : 'No profile information collected yet.';
+
       const userPrompt = `User said: "${message}"
+
+${profileContext}
 
 CURRENT AVAILABLE LENDERS:
 ${productSummary}
 ${matchResultsText}
-TASK: Respond as Frank and extract any business information. ALWAYS mention current match results in your response.
+TASK: Respond as Frank and extract any business information. ALWAYS mention current match results using EXACT numbers and names from the lists above. DO NOT CREATE OR GUESS any lender names or counts.
 
 EXTRACTION FIELDS:
 - industry, monthlyTurnover (number), amountRequested (number), yearsTrading (number)
 - vatRegistered (boolean), useOfFunds, urgencyDays (number), province
+- collateralAcceptable (boolean): true if user is okay with providing collateral, false if they prefer no collateral
 - contact: {name, email, phone}
 
 You must respond with valid JSON only:
@@ -190,27 +194,30 @@ You must respond with valid JSON only:
         { role: 'user', content: userPrompt }
       ];
 
-      console.log('🤖 Sending to OpenAI (frontend):', { message, profile });
+      console.log('🤖 AI CONTEXT:', {
+        userProfile: profile,
+        currentMatches: matchContext ? {
+          qualified: matchContext.qualifiedCount,
+          needMoreInfo: matchContext.needMoreInfoCount,
+          notQualified: matchContext.notQualifiedCount,
+          qualifiedLenders: matchContext.qualified,
+          needMoreInfoLenders: matchContext.needMoreInfo
+        } : 'none'
+      });
 
       const completion = await openai.chat.completions.create({
         model: 'gpt-4o',
         messages,
-        temperature: 0.3,
-        max_tokens: 400,
+        temperature: 0.1, // Lower temperature for more deterministic responses
+        max_tokens: 300, // Shorter responses to reduce hallucination
         response_format: { type: "json_object" }
       });
 
       const response = completion.choices[0]?.message?.content || '{}';
-      console.log('🤖 OpenAI raw response (frontend):', response);
+      console.log('🤖 AI RAW RESPONSE:', response);
 
       try {
         const parsed = JSON.parse(response) as GPTResponse;
-        console.log('🤖 Parsed OpenAI response:', {
-          summary: parsed.summary,
-          extracted: parsed.extracted,
-          extractedKeys: parsed.extracted ? Object.keys(parsed.extracted) : [],
-          extractedCount: parsed.extracted ? Object.keys(parsed.extracted).length : 0
-        });
         
         return {
           summary: parsed.summary || "Let's get you matched with funding. Tell me about your business.",
@@ -218,19 +225,12 @@ You must respond with valid JSON only:
         };
       } catch (error) {
         console.error('❌ Failed to parse GPT response:', error);
-        const fallbackExtracted = this.extractBusinessInfo(message);
-        console.log('🔄 Using fallback extraction:', fallbackExtracted);
-        return {
-          summary: "Let's get you matched with funding. Tell me about your business.",
-          extracted: fallbackExtracted
-        };
+        console.error('❌ RAW RESPONSE WAS:', response);
+        throw new Error('Failed to parse GPT response: ' + error);
       }
     } catch (error) {
-      console.error('OpenAI API error (frontend):', error);
-      return {
-        summary: "I'm here to show you what funding you qualify for. Tell me about your business — how long you've been trading, your monthly turnover, and what industry you're in.",
-        extracted: this.extractBusinessInfo(message)
-      };
+      console.error('❌ OpenAI API error (frontend):', error);
+      throw error;
     }
   }
 
@@ -274,17 +274,20 @@ provide a single bullet point rationale (max 18 words) for why this is a good ma
     const result: Partial<Profile> = {};
     const messageLower = message.toLowerCase();
 
-    console.log('Extracting business info from message:', message);
-
-    // Extract amounts (improved to catch more patterns)
-    const amountMatches = Array.from(message.matchAll(/(\d{1,3}(?:,\d{3})*|\d+)k?/gi));
-    console.log('Found amount matches:', amountMatches);
+    // Extract amounts (improved to catch more patterns including "million")
+    const amountMatches = Array.from(message.matchAll(/(\d{1,3}(?:,\d{3})*|\d+)\s*(?:million|mil|m|k)?/gi));
     
     for (const match of amountMatches) {
       const rawAmount = match[1].replace(/,/g, '');
-      const amount = match[0].toLowerCase().includes('k') ? parseInt(rawAmount) * 1000 : parseInt(rawAmount);
+      const matchText = match[0].toLowerCase();
+      let amount = parseInt(rawAmount);
       
-      console.log(`Processing amount: ${match[0]} -> ${amount}`);
+      // Apply multipliers
+      if (matchText.includes('million') || matchText.includes('mil')) {
+        amount = amount * 1000000;
+      } else if (matchText.includes('k')) {
+        amount = amount * 1000;
+      }
       
       if (amount > 1000 && amount < 100000000) {
         const index = match.index || 0;
@@ -292,14 +295,10 @@ provide a single bullet point rationale (max 18 words) for why this is a good ma
         const contextAfter = message.slice(index, Math.min(message.length, index + 50)).toLowerCase();
         const fullContext = contextBefore + contextAfter;
         
-        console.log(`Context for ${amount}: "${fullContext}"`);
-        
         if (!result.monthlyTurnover && (fullContext.includes('turnover') || fullContext.includes('revenue') || fullContext.includes('monthly'))) {
           result.monthlyTurnover = amount;
-          console.log('Set monthlyTurnover:', amount);
         } else if (!result.amountRequested && (fullContext.includes('need') || fullContext.includes('loan') || fullContext.includes('funding'))) {
           result.amountRequested = amount;
-          console.log('Set amountRequested:', amount);
         }
       }
     }
@@ -308,16 +307,20 @@ provide a single bullet point rationale (max 18 words) for why this is a good ma
     const yearsMatch = message.match(/(\d+)\s*years?/i);
     if (yearsMatch) {
       result.yearsTrading = parseInt(yearsMatch[1]);
-      console.log('Set yearsTrading:', result.yearsTrading);
     }
 
     // Extract VAT status
     if (messageLower.includes('vat registered') || messageLower.includes('registered for vat') || messageLower.includes('vat yes')) {
       result.vatRegistered = true;
-      console.log('Set vatRegistered: true');
     } else if (messageLower.includes('not vat') || messageLower.includes('no vat') || messageLower.includes('vat no')) {
       result.vatRegistered = false;
-      console.log('Set vatRegistered: false');
+    }
+
+    // Extract collateral preferences
+    if (messageLower.includes('collateral') && (messageLower.includes('ok') || messageLower.includes('okay') || messageLower.includes('yes') || messageLower.includes('fine') || messageLower.includes('acceptable'))) {
+      result.collateralAcceptable = true;
+    } else if (messageLower.includes('collateral') && (messageLower.includes('no') || messageLower.includes('not') || messageLower.includes('prefer not') || messageLower.includes('avoid'))) {
+      result.collateralAcceptable = false;
     }
 
     // Extract industry (expanded list)
@@ -325,7 +328,6 @@ provide a single bullet point rationale (max 18 words) for why this is a good ma
     for (const industry of industries) {
       if (messageLower.includes(industry)) {
         result.industry = industry.charAt(0).toUpperCase() + industry.slice(1);
-        console.log('Set industry:', result.industry);
         break;
       }
     }
@@ -337,7 +339,6 @@ provide a single bullet point rationale (max 18 words) for why this is a good ma
         result.province = province === 'western cape' ? 'Western Cape' : 
                          province === 'kzn' ? 'KZN' : 
                          province.charAt(0).toUpperCase() + province.slice(1);
-        console.log('Set province:', result.province);
         break;
       }
     }
@@ -355,7 +356,6 @@ provide a single bullet point rationale (max 18 words) for why this is a good ma
       result.contact.phone = phoneMatch[1].replace(/\s+/g, '');
     }
 
-    console.log('Final extraction result:', result);
     return result;
   }
 }

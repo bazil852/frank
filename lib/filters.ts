@@ -9,6 +9,7 @@ export type Profile = {
   useOfFunds?: string;
   urgencyDays?: number;
   province?: string;
+  collateralAcceptable?: boolean;
   contact?: {
     name?: string;
     email?: string;
@@ -124,8 +125,11 @@ export function filterProducts(
       reasons.push(`Not available in ${profile.province}`);
     }
 
-    if (product.collateralRequired) {
-      improvements.push('Collateral required');
+    // Check collateral requirements
+    if (product.collateralRequired && profile.collateralAcceptable === false) {
+      reasons.push('Collateral required, but you prefer no collateral');
+    } else if (product.collateralRequired && profile.collateralAcceptable === undefined) {
+      improvements.push('Collateral required - confirm if acceptable');
       closeMatchCount++;
     }
 

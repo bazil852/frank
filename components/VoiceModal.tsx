@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { X, Mic, MicOff, Phone, PhoneOff, Volume2, VolumeX } from 'lucide-react';
+import { X, Mic, MicOff, Phone, PhoneOff } from 'lucide-react';
 import { VoiceClient, VoiceMessage } from '@/lib/voice-client';
 
 interface VoiceModalProps {
@@ -21,7 +21,6 @@ export default function VoiceModal({
   const [isConnecting, setIsConnecting] = useState(false);
   const [isConnected, setIsConnected] = useState(false);
   const [isRecording, setIsRecording] = useState(false);
-  const [isMuted, setIsMuted] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [transcript, setTranscript] = useState<string>('');
   const [assistantResponse, setAssistantResponse] = useState<string>('');
@@ -150,13 +149,13 @@ You are Frank, helping South African SMEs find business funding. Keep responses 
             initial={{ scale: 0.9, opacity: 0 }}
             animate={{ scale: 1, opacity: 1 }}
             exit={{ scale: 0.9, opacity: 0 }}
-            className="bg-white dark:bg-slate-800 rounded-2xl p-6 w-full max-w-md shadow-2xl"
+            className="bg-white rounded-2xl p-6 w-full max-w-md shadow-2xl"
             onClick={(e) => e.stopPropagation()}
           >
             {/* Header */}
             <div className="flex items-center justify-between mb-6">
               <div>
-                <h3 className="text-xl font-semibold text-slate-900 dark:text-slate-100">
+                <h3 className="text-xl font-semibold text-slate-900">
                   Voice Chat with Frank
                 </h3>
                 <div className="flex items-center gap-2 mt-1">
@@ -165,7 +164,7 @@ You are Frank, helping South African SMEs find business funding. Keep responses 
                     connectionStatus === 'connecting' ? 'bg-yellow-500 animate-pulse' : 
                     connectionStatus === 'error' ? 'bg-red-500' : 'bg-slate-400'
                   }`} />
-                  <span className="text-sm text-slate-600 dark:text-slate-400 capitalize">
+                  <span className="text-sm text-slate-600 capitalize">
                     {connectionStatus === 'connecting' ? 'Connecting...' : connectionStatus}
                   </span>
                 </div>
@@ -174,7 +173,7 @@ You are Frank, helping South African SMEs find business funding. Keep responses 
                 whileHover={{ scale: 1.1 }}
                 whileTap={{ scale: 0.9 }}
                 onClick={onClose}
-                className="p-2 text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200"
+                className="p-2 text-slate-500 hover:text-slate-700"
               >
                 <X size={20} />
               </motion.button>
@@ -185,9 +184,9 @@ You are Frank, helping South African SMEs find business funding. Keep responses 
               <motion.div
                 initial={{ opacity: 0, y: -10 }}
                 animate={{ opacity: 1, y: 0 }}
-                className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg p-3 mb-4"
+                className="bg-red-50 border border-red-200 rounded-lg p-3 mb-4"
               >
-                <p className="text-red-800 dark:text-red-200 text-sm">{error}</p>
+                <p className="text-red-800 text-sm">{error}</p>
               </motion.div>
             )}
 
@@ -205,10 +204,10 @@ You are Frank, helping South African SMEs find business funding. Keep responses 
                 } : {}}
                 className={`w-32 h-32 rounded-full flex items-center justify-center ${
                   isRecording 
-                    ? 'bg-red-100 dark:bg-red-900/30 border-4 border-red-300 dark:border-red-700'
+                    ? 'bg-red-100 border-4 border-red-300'
                     : isConnected
-                    ? 'bg-green-100 dark:bg-green-900/30 border-4 border-green-300 dark:border-green-700'
-                    : 'bg-slate-100 dark:bg-slate-700 border-4 border-slate-300 dark:border-slate-600'
+                    ? 'bg-green-100 border-4 border-green-300'
+                    : 'bg-slate-100 border-4 border-slate-300'
                 }`}
               >
                 <motion.div
@@ -216,12 +215,12 @@ You are Frank, helping South African SMEs find business funding. Keep responses 
                   whileTap={{ scale: 0.95 }}
                 >
                   {isRecording ? (
-                    <Mic size={40} className="text-red-600 dark:text-red-400" />
+                    <Mic size={40} className="text-red-600" />
                   ) : (
                     <MicOff size={40} className={`${
                       isConnected 
-                        ? 'text-green-600 dark:text-green-400'
-                        : 'text-slate-500 dark:text-slate-400'
+                        ? 'text-green-600'
+                        : 'text-slate-500'
                     }`} />
                   )}
                 </motion.div>
@@ -232,15 +231,15 @@ You are Frank, helping South African SMEs find business funding. Keep responses 
             {(transcript || assistantResponse) && (
               <div className="mb-6 space-y-3 max-h-32 overflow-y-auto">
                 {transcript && (
-                  <div className="bg-blue-50 dark:bg-blue-900/20 rounded-lg p-3">
-                    <p className="text-sm text-blue-800 dark:text-blue-200">
+                  <div className="bg-blue-50 rounded-lg p-3">
+                    <p className="text-sm text-blue-800">
                       <strong>You:</strong> {transcript}
                     </p>
                   </div>
                 )}
                 {assistantResponse && (
-                  <div className="bg-green-50 dark:bg-green-900/20 rounded-lg p-3">
-                    <p className="text-sm text-green-800 dark:text-green-200">
+                  <div className="bg-green-50 rounded-lg p-3">
+                    <p className="text-sm text-green-800">
                       <strong>Frank:</strong> {assistantResponse}
                     </p>
                   </div>
@@ -291,7 +290,7 @@ You are Frank, helping South African SMEs find business funding. Keep responses 
 
             {/* Instructions */}
             <div className="mt-6 text-center">
-              <p className="text-sm text-slate-600 dark:text-slate-400">
+              <p className="text-sm text-slate-600">
                 {!isConnected ? 
                   'Click "Start Call" to begin your voice conversation with Frank' :
                   isRecording ? 

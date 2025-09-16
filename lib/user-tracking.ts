@@ -127,12 +127,7 @@ export class AnonymousUserTracker {
     const session = this.getUserSession();
     
     // You can send this to your Supabase database
-    console.log('Tracking event:', {
-      ...session,
-      eventName,
-      eventData,
-      timestamp: new Date().toISOString()
-    });
+    // Tracking disabled for cleaner logs
     
     // Update last activity
     this.getSessionId(); // This updates the last activity timestamp

@@ -1,12 +1,10 @@
 'use client';
 
 import { motion, AnimatePresence } from 'framer-motion';
-import { useState, useRef, useEffect } from 'react';
-import { Send, RotateCcw, Sparkles, Maximize2, Minimize2, Mic } from 'lucide-react';
+import { useState, useRef, useEffect, useLayoutEffect, forwardRef, useImperativeHandle } from 'react';
+import { Send } from 'lucide-react';
 import { ConversationTracker } from '@/lib/db-conversations';
-import { AnonymousUserTracker } from '@/lib/user-tracking';
 import ChipsBar from './ChipsBar';
-import VoiceModal from './VoiceModal';
 
 function formatMessage(content: string): string {
   return content
@@ -39,26 +37,52 @@ interface ChatUIProps {
   onProfileUpdate?: (updates: any) => void;
 }
 
-export default function ChatUI({ 
+export interface ChatUIRef {
+  resetChat: () => Promise<void>;
+}
+
+const ChatUI = forwardRef<ChatUIRef, ChatUIProps>(({ 
   onMessage, 
   onReset, 
-  onToggleExpand, 
-  isExpanded = false, 
-  showProfileProgress = false, 
   profile = {}, 
   showChips = false,
-  hideMobileFeatures = false,
-  onProfileUpdate
-}: ChatUIProps) {
+  hideMobileFeatures = false
+}, ref) => {
   const [personality, setPersonality] = useState('Professional and friendly. Be helpful and informative while maintaining a warm tone.');
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState('');
   const [sending, setSending] = useState(false);
   const [loadingHistory, setLoadingHistory] = useState(true);
   const [messageIndex, setMessageIndex] = useState(0);
-  const [showVoiceModal, setShowVoiceModal] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
   const hasLoadedHistory = useRef(false);
+  const endRef = useRef<HTMLDivElement>(null);
+
+  // Expose reset function to parent component
+  useImperativeHandle(ref, () => ({
+    resetChat: async () => {
+      try {
+        // Clear conversation history from database
+        await ConversationTracker.clearConversationHistory();
+        
+        // Reset local state with empty messages (no initial message)
+        setMessages([]);
+        
+        setInput('');
+        setMessageIndex(0);
+        setSending(false);
+        
+        // Notify parent component to reset its state
+        if (onReset) {
+          onReset();
+        }
+        
+        console.log('Chat reset completed');
+      } catch (error) {
+        console.error('Error resetting chat:', error);
+      }
+    }
+  }));
 
   // Load conversation history on component mount
   useEffect(() => {
@@ -102,32 +126,17 @@ export default function ChatUI({
             const latestIndex = await ConversationTracker.getLatestMessageIndex();
             setMessageIndex(latestIndex);
           } else {
-            // No history, show initial message
-            setMessages([{
-              id: '1',
-              type: 'bot',
-              content: 'I\'m Frank — I show you what funding you actually qualify for. No BS, no dead ends.\n\nHere\'s how I help:\n\n**Check eligibility** → I stack your business up against what lenders are actually looking for — revenue, time trading, VAT, collateral. If you\'re in, you\'re in. If not, at least you know before wasting time.\n\n**Find your fit** → From the options you qualify for, we talk through which ones make the most sense for you — whether you care more about speed, size, or cost.\n\n**Explain stuff** → If something sounds like finance-speak (like "working capital facility"), I\'ll strip it back to plain English.\n\n**Enable applications** → Ready to go? I set you up to apply to one or all your options in one shot — no juggling forms, no repeated paperwork.\n\nNow, tell me about your business — how long you\'ve been running, your turnover, and if you\'re registered. The more you share, the faster I can get you matched.',
-              timestamp: new Date(),
-            }]);
+            // No history, start with empty messages for welcome screen
+            setMessages([]);
           }
         } else {
-          // First time user
-          setMessages([{
-            id: '1',
-            type: 'bot',
-            content: 'I\'m Frank — I show you what funding you actually qualify for. No BS, no dead ends.\n\nHere\'s how I help:\n\n**Check eligibility** → I stack your business up against what lenders are actually looking for — revenue, time trading, VAT, collateral. If you\'re in, you\'re in. If not, at least you know before wasting time.\n\n**Find your fit** → From the options you qualify for, we talk through which ones make the most sense for you — whether you care more about speed, size, or cost.\n\n**Explain stuff** → If something sounds like finance-speak (like "working capital facility"), I\'ll strip it back to plain English.\n\n**Enable applications** → Ready to go? I set you up to apply to one or all your options in one shot — no juggling forms, no repeated paperwork.\n\nNow, tell me about your business — how long you\'ve been running, your turnover, and if you\'re registered. The more you share, the faster I can get you matched.',
-            timestamp: new Date(),
-          }]);
+          // First time user, start with empty messages for welcome screen
+          setMessages([]);
         }
       } catch (error) {
         console.error('Error loading conversation history:', error);
-        // Fallback to default message
-        setMessages([{
-          id: '1',
-          type: 'bot',
-          content: 'I\'m Frank — I show you what funding you actually qualify for. No BS, no dead ends.\n\nHere\'s how I help:\n\n**Check eligibility** → I stack your business up against what lenders are actually looking for — revenue, time trading, VAT, collateral. If you\'re in, you\'re in. If not, at least you know before wasting time.\n\n**Find your fit** → From the options you qualify for, we talk through which ones make the most sense for you — whether you care more about speed, size, or cost.\n\n**Explain stuff** → If something sounds like finance-speak (like "working capital facility"), I\'ll strip it back to plain English.\n\n**Enable applications** → Ready to go? I set you up to apply to one or all your options in one shot — no juggling forms, no repeated paperwork.\n\nNow, tell me about your business — how long you\'ve been running, your turnover, and if you\'re registered. The more you share, the faster I can get you matched.',
-          timestamp: new Date(),
-        }]);
+        // Fallback to empty messages for welcome screen
+        setMessages([]);
       } finally {
         setLoadingHistory(false);
       }
@@ -136,9 +145,15 @@ export default function ChatUI({
     loadConversationHistory();
   }, []);
 
-  useEffect(() => {
-    scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: 'smooth' });
-  }, [messages]);
+  // Better autoscroll that accounts for animation timing
+  const scrollToBottom = () => {
+    endRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' });
+  };
+
+  useLayoutEffect(() => {
+    // Wait one frame so Framer Motion can finish inserting/animating nodes
+    requestAnimationFrame(scrollToBottom);
+  }, [messages, sending]);
 
   const handleSend = async () => {
     if (!input.trim() || sending) return;
@@ -200,84 +215,18 @@ export default function ChatUI({
     }
   };
 
-  const handleResetChat = async () => {
-    try {
-      // Clear conversation history from database
-      await ConversationTracker.clearConversationHistory();
-      
-      // Reset local state
-      setMessages([{
-        id: '1',
-        type: 'bot',
-        content: 'I\'m Frank — I show you what funding you actually qualify for. No BS, no dead ends.\n\nHere\'s how I help:\n\n**Check eligibility** → I stack your business up against what lenders are actually looking for — revenue, time trading, VAT, collateral. If you\'re in, you\'re in. If not, at least you know before wasting time.\n\n**Find your fit** → From the options you qualify for, we talk through which ones make the most sense for you — whether you care more about speed, size, or cost.\n\n**Explain stuff** → If something sounds like finance-speak (like "working capital facility"), I\'ll strip it back to plain English.\n\n**Enable applications** → Ready to go? I set you up to apply to one or all your options in one shot — no juggling forms, no repeated paperwork.\n\nNow, tell me about your business — how long you\'ve been running, your turnover, and if you\'re registered. The more you share, the faster I can get you matched.',
-        timestamp: new Date(),
-      }]);
-      
-      setInput('');
-      setMessageIndex(0);
-      
-      // Notify parent component to reset its state
-      if (onReset) {
-        onReset();
-      }
-      
-      console.log('Chat reset completed');
-    } catch (error) {
-      console.error('Error resetting chat:', error);
-    }
-  };
 
   return (
-    <div className="w-full h-full flex flex-col bg-white dark:bg-slate-800 rounded-2xl shadow-sm border border-slate-100 dark:border-slate-700 transition-colors duration-200">
-      <div className="flex items-center justify-between p-5 border-b border-slate-100 dark:border-slate-700 transition-colors duration-200">
-        <div className="flex items-center gap-3">
-          <div className="relative">
-            <div className="w-10 h-10 bg-brand-600 rounded-full flex items-center justify-center text-white text-lg font-bold shadow-sm">
-              F
-            </div>
-            <div className="absolute -bottom-1 -right-1 w-3 h-3 bg-emerald-400 rounded-full border-2 border-white"></div>
-          </div>
-          <div>
-            <h3 className="font-semibold text-slate-900 dark:text-slate-100 transition-colors duration-200">Frank</h3>
-          </div>
-        </div>
-        <div className="flex items-center gap-2">
-          {onToggleExpand && !hideMobileFeatures && (
-            <motion.button
-              whileHover={{ scale: 1.05, rotate: 5 }}
-              whileTap={{ scale: 0.95 }}
-              onClick={onToggleExpand}
-              className="hidden md:flex p-2 text-slate-600 hover:text-slate-900 dark:text-slate-400 dark:hover:text-slate-100 bg-slate-50 hover:bg-slate-100 dark:bg-slate-700 dark:hover:bg-slate-600 rounded-full transition-all duration-300 ease-in-out"
-              title={isExpanded ? "Minimize chat" : "Expand chat"}
-            >
-              <motion.div
-                animate={{ rotate: isExpanded ? 180 : 0 }}
-                transition={{ duration: 0.3, ease: "easeInOut" }}
-              >
-                {isExpanded ? <Minimize2 size={16} /> : <Maximize2 size={16} />}
-              </motion.div>
-            </motion.button>
-          )}
-          <motion.button
-            whileHover={{ scale: 1.05 }}
-            whileTap={{ scale: 0.95 }}
-            onClick={handleResetChat}
-            className="flex items-center gap-2 px-3 py-1.5 text-sm text-slate-600 hover:text-slate-900 dark:text-slate-400 dark:hover:text-slate-100 bg-slate-50 hover:bg-slate-100 dark:bg-slate-700 dark:hover:bg-slate-600 rounded-full transition-all duration-200"
-            title="Start a fresh conversation"
-          >
-            <RotateCcw size={14} />
-            <span className="font-medium">New Chat</span>
-          </motion.button>
-        </div>
-      </div>
+    <div className="w-full h-full min-h-0 flex flex-col bg-transparent rounded-2xl overflow-hidden">
       {/* Chips Section */}
       {showChips && !hideMobileFeatures && (
-        <div className="hidden md:block px-6 py-4 border-b border-slate-100 dark:border-slate-700 bg-white dark:bg-slate-800 transition-colors duration-200">
+        <div className="hidden md:block px-6 py-4 bg-transparent flex-shrink-0">
           <ChipsBar profile={profile} />
         </div>
       )}
       
-      <div ref={scrollRef} className="flex-1 overflow-y-auto p-6 space-y-4 bg-slate-50 dark:bg-slate-800 transition-colors duration-200">
+      {/* Scrollable Chat Messages */}
+      <div ref={scrollRef} className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden p-6 space-y-4 bg-transparent scrollbar-hide">
         {loadingHistory ? (
           <div className="flex items-center justify-center h-full">
             <div className="text-center">
@@ -288,6 +237,32 @@ export default function ChatUI({
               />
               <p className="text-slate-500 text-sm font-medium">Loading conversation history...</p>
             </div>
+          </div>
+        ) : messages.length === 0 ? (
+          <div className="flex-1 flex items-center justify-center">
+            <motion.div
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.6, ease: "easeOut" }}
+              className="text-center max-w-md mx-auto px-4"
+            >
+              <motion.h1 
+                initial={{ opacity: 0, scale: 0.9 }}
+                animate={{ opacity: 1, scale: 1 }}
+                transition={{ duration: 0.8, delay: 0.2 }}
+                className="text-4xl font-bold text-slate-800 mb-4"
+              >
+                Hey, Let&apos;s get started
+              </motion.h1>
+              <motion.p
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                transition={{ duration: 0.6, delay: 0.4 }}
+                className="text-lg text-slate-600"
+              >
+                Tell me about your business and what you need funding for.
+              </motion.p>
+            </motion.div>
           </div>
         ) : (
           <AnimatePresence initial={false}>
@@ -317,15 +292,15 @@ export default function ChatUI({
                 )}
                 <motion.div
                   whileHover={{ scale: 1.01 }}
-                  className={`px-5 py-3 rounded-2xl ${
+                  className={`${
                     message.type === 'user'
-                      ? 'bg-slate-800 dark:bg-slate-700 text-white shadow-md'
-                      : 'bg-brand-50 dark:bg-slate-700 text-slate-800 dark:text-slate-100 border border-brand-100 dark:border-slate-600 shadow-sm'
+                      ? 'px-5 py-3 rounded-2xl bg-slate-800 text-white shadow-md'
+                      : 'text-slate-800'
                   }`}
                 >
                   <div 
                     className={`whitespace-pre-wrap leading-relaxed ${
-                      message.type === 'user' ? 'text-white' : 'text-slate-700 dark:text-slate-100'
+                      message.type === 'user' ? 'text-white' : 'text-slate-700'
                     }`}
                     dangerouslySetInnerHTML={{
                       __html: formatMessage(message.content)
@@ -347,7 +322,7 @@ export default function ChatUI({
               <div className="w-8 h-8 bg-brand-600 rounded-full flex items-center justify-center text-white text-sm font-bold shadow-sm">
                 F
               </div>
-              <div className="bg-brand-50 dark:bg-slate-700 border border-brand-100 dark:border-slate-600 rounded-2xl px-4 py-2 transition-colors duration-200">
+              <div className="bg-transparent rounded-2xl px-4 py-2">
                 <div className="flex gap-1.5">
                   <motion.span
                     animate={{ opacity: [0.4, 1, 0.4] }}
@@ -369,8 +344,12 @@ export default function ChatUI({
             </div>
           </motion.div>
         )}
+        {/* Sentinel element for accurate scrolling */}
+        <div ref={endRef} />
       </div>
-      <div className="p-5 border-t border-slate-100 dark:border-slate-700 bg-white dark:bg-slate-800 rounded-b-2xl transition-colors duration-200">
+      
+      {/* Input at Bottom */}
+      <div className="flex-shrink-0 p-5 bg-white/50 backdrop-blur-sm border-t border-slate-200">
         <div className="relative">
           <input
             type="text"
@@ -379,24 +358,15 @@ export default function ChatUI({
             onKeyDown={(e) => e.key === 'Enter' && handleSend()}
             placeholder="Type your message..."
             disabled={sending}
-            className="w-full px-6 py-4 pr-24 bg-slate-50 dark:bg-slate-700 border border-slate-200 dark:border-slate-600 rounded-2xl focus:outline-none focus:ring-2 focus:ring-brand-600 focus:border-brand-600 disabled:opacity-50 text-slate-900 dark:text-slate-100 placeholder-slate-500 dark:placeholder-slate-400 transition-all duration-200"
+            className="w-full px-6 py-4 pr-24 bg-transparent border-2 border-slate-900 rounded-2xl focus:outline-none focus:ring-2 focus:ring-slate-700 focus:border-slate-700 disabled:opacity-50 text-slate-900 placeholder-slate-500 transition-all duration-200"
           />
-          <div className="absolute right-2 top-1/2 transform -translate-y-1/2 flex gap-2">
-            <motion.button
-              whileHover={{ scale: 1.05 }}
-              whileTap={{ scale: 0.95 }}
-              onClick={() => setShowVoiceModal(true)}
-              className="w-10 h-10 bg-slate-200 dark:bg-slate-600 hover:bg-slate-300 dark:hover:bg-slate-500 rounded-full flex items-center justify-center text-slate-700 dark:text-slate-300 shadow-sm transition-all duration-200"
-              title="Voice chat"
-            >
-              <Mic size={18} />
-            </motion.button>
+          <div className="absolute right-2 top-1/2 transform -translate-y-1/2">
             <motion.button
               whileHover={{ scale: 1.05 }}
               whileTap={{ scale: 0.95 }}
               onClick={handleSend}
               disabled={!input.trim() || sending}
-              className="w-10 h-10 bg-brand-600 rounded-full flex items-center justify-center text-white shadow-sm disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-200"
+              className="w-10 h-10 bg-slate-900 hover:bg-slate-800 rounded-full flex items-center justify-center text-white shadow-sm disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-200"
             >
               <Send size={18} />
             </motion.button>
@@ -404,12 +374,10 @@ export default function ChatUI({
         </div>
       </div>
       
-      <VoiceModal
-        isOpen={showVoiceModal}
-        onClose={() => setShowVoiceModal(false)}
-        profile={profile}
-        onProfileUpdate={onProfileUpdate}
-      />
     </div>
   );
-}
+});
+
+ChatUI.displayName = 'ChatUI';
+
+export default ChatUI;

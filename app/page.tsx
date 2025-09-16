@@ -1,19 +1,17 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import Image from 'next/image';
 import { Maximize2, Minimize2, MessageSquare, X } from 'lucide-react';
 import ModeToggle from '@/components/ModeToggle';
 import Field from '@/components/Field';
-import ChipsBar from '@/components/ChipsBar';
 import MatchesTabs from '@/components/MatchesTabs';
 import MatchCard from '@/components/MatchCard';
 import FilteredCard from '@/components/FilteredCard';
 import CloseMatchCard from '@/components/CloseMatchCard';
 import ApplyModal from '@/components/ApplyModal';
-import ChatUI from '@/components/ChatUI';
-import ThemeToggle from '@/components/ThemeToggle';
+import ChatUI, { ChatUIRef } from '@/components/ChatUI';
+import Navbar from '@/components/Navbar';
 import { Profile, filterProducts } from '@/lib/filters';
 import { Product } from '@/lib/catalog';
 import { getLendersFromDB } from '@/lib/db-lenders';
@@ -23,6 +21,7 @@ import { FrankAI } from '@/lib/openai-client';
 
 export default function Home() {
   const { userId, sessionId, trackEvent, trackApplication } = useUserTracking();
+  const chatUIRef = useRef<ChatUIRef>(null);
   const [mode, setMode] = useState<'form' | 'chat'>('chat');
   const [hasUserInput, setHasUserInput] = useState(false);
   const [hasFirstResponse, setHasFirstResponse] = useState(false);
@@ -46,10 +45,9 @@ export default function Home() {
   const [showApplyModal, setShowApplyModal] = useState(false);
   const [expandedPanel, setExpandedPanel] = useState<'none' | 'chat' | 'matches'>('none');
   const [showMobileModal, setShowMobileModal] = useState(false);
+  const [showMatchesPanel, setShowMatchesPanel] = useState(false);
 
   const updateProfile = useCallback(async (updates: Partial<Profile>) => {
-    console.log('updateProfile called with:', updates);
-    
     const updatedProfile = { ...profile, ...updates };
     
     // Update local state
@@ -59,7 +57,6 @@ export default function Home() {
     // Save profile updates to database for personalization
     try {
       await ConversationTracker.updateUserBusinessProfile(updates);
-      console.log('Profile saved to database:', updates);
     } catch (error) {
       console.error('Error saving profile to database:', error);
     }
@@ -80,8 +77,6 @@ export default function Home() {
       updatedProfile.amountRequested
     ];
     const filledFields = keyFields.filter(field => field !== undefined && field !== null && field !== '').length;
-    
-    console.log(`updateProfile: ${filledFields}/4 fields filled`);
     
     // Show panel if we have 3 or 4 key fields
     if (filledFields >= 3) {
@@ -105,7 +100,6 @@ export default function Home() {
       try {
         setLoadingProducts(true);
         const dbProducts = await getLendersFromDB();
-        console.log('Fetched products from database:', dbProducts);
         setProducts(dbProducts);
       } catch (error) {
         console.error('Error fetching products:', error);
@@ -124,7 +118,6 @@ export default function Home() {
         
         const savedProfile = await ConversationTracker.getUserBusinessProfile();
         if (savedProfile && Object.keys(savedProfile).length > 0) {
-          console.log('Loading saved user profile:', savedProfile);
           setProfile(prevProfile => ({
             ...prevProfile,
             ...savedProfile
@@ -143,6 +136,7 @@ export default function Home() {
             setHasUserInput(true);
             // Also unblur the panel since user clearly had a previous conversation
             setHasFirstResponse(true);
+            setShowMatchesPanel(true);
           }
         }
       } catch (error) {
@@ -155,18 +149,21 @@ export default function Home() {
 
   // Monitor hasFirstResponse state changes for debugging
   useEffect(() => {
-    console.log('🎭 hasFirstResponse state changed to:', hasFirstResponse);
-    console.log('🎭 Panel should be:', hasFirstResponse ? 'UNBLURRED' : 'BLURRED');
+    // Removed debug logs
   }, [hasFirstResponse]);
 
   useEffect(() => {
     if (loadingProducts || products.length === 0) return;
     
-    console.log('useEffect for filtering triggered with profile:', profile);
     const timer = setTimeout(async () => {
-      console.log('Running filterProducts with profile:', profile);
       const result = filterProducts(profile, products);
-      console.log('Filter results:', result);
+      console.log('🎯 MATCH RESULTS:', {
+        qualified: result.qualified.length,
+        needMoreInfo: result.needMoreInfo.length,
+        notQualified: result.notQualified.length,
+        qualifiedNames: result.qualified.map(p => p.provider),
+        profile: profile
+      });
       setMatches(result);
       
       // Only fetch GPT reasons if we have meaningful profile data
@@ -201,7 +198,6 @@ export default function Home() {
       
       setMatchReasons(newReasons);
       setFiltering(false);
-      console.log('Filtering completed, matches updated');
     }, 250);
 
     return () => clearTimeout(timer);
@@ -209,71 +205,65 @@ export default function Home() {
 
   const handleChatMessage = async (message: string, chatHistory?: Array<{role: 'system' | 'user' | 'assistant', content: string}>, personality?: string): Promise<string> => {
     try {
-      console.log('💬 Starting handleChatMessage with:', { message, hasFirstResponse, hasUserInput });
+      console.log('💬 USER MESSAGE:', message);
       setIsProcessing(true);
       
-      // Get current match results for AI context
-      const currentMatches = filterProducts(profile, products);
+      // Use GPT for extraction directly - no fallbacks
+      const quickExtraction = await FrankAI.chat(message, chatHistory || [], profile, products, undefined);
+      console.log('🔍 GPT QUICK EXTRACTION:', quickExtraction.extracted);
       
-      // Use frontend OpenAI client
-      const data = await FrankAI.chat(message, chatHistory || [], profile, products, currentMatches);
-      console.log('Frank AI response:', data);
+      // Create updated profile with any new extracted data
+      const updatedProfile = { ...profile, ...quickExtraction.extracted };
+      
+      // Now get FRESH match results with the updated profile for AI context
+      const currentMatches = filterProducts(updatedProfile, products);
+      console.log('🎯 FRESH MATCH RESULTS FOR AI:', {
+        qualified: currentMatches.qualified.length,
+        needMoreInfo: currentMatches.needMoreInfo.length,
+        notQualified: currentMatches.notQualified.length
+      });
+      
+      // Use frontend OpenAI client with fresh match data
+      const data = await FrankAI.chat(message, chatHistory || [], updatedProfile, products, currentMatches);
+      console.log('🤖 AI RESPONSE:', data.summary);
+      console.log('🔍 AI EXTRACTED:', data.extracted);
+      
+      // Log extraction progress
+      const finalProfile = { ...profile, ...data.extracted };
+      const requiredFields = ['industry', 'yearsTrading', 'monthlyTurnover', 'amountRequested'];
+      const optionalFields = ['vatRegistered', 'collateralAcceptable', 'province', 'useOfFunds', 'urgencyDays'];
+      
+      const extractedRequired = requiredFields.filter(field => finalProfile[field as keyof typeof finalProfile] !== undefined);
+      const missingRequired = requiredFields.filter(field => finalProfile[field as keyof typeof finalProfile] === undefined);
+      const extractedOptional = optionalFields.filter(field => finalProfile[field as keyof typeof finalProfile] !== undefined);
+      const missingOptional = optionalFields.filter(field => finalProfile[field as keyof typeof finalProfile] === undefined);
+      
+      console.log('📊 EXTRACTION PROGRESS:', {
+        required: `${extractedRequired.length}/${requiredFields.length} - Have: [${extractedRequired.join(', ')}] - Missing: [${missingRequired.join(', ')}]`,
+        optional: `${extractedOptional.length}/${optionalFields.length} - Have: [${extractedOptional.join(', ')}] - Missing: [${missingOptional.join(', ')}]`,
+        currentProfile: finalProfile
+      });
       
       if (data.extracted && Object.keys(data.extracted).length > 0) {
-        console.log('Extracted data from API:', data.extracted);
-        
         // Use updateProfile to ensure filtering is triggered
         updateProfile(data.extracted);
         
-        // Get the updated profile for checking
-        const updatedProfile = { ...profile, ...data.extracted };
-        console.log('Updated profile:', updatedProfile);
-        console.log('Has all required fields:', {
-          industry: updatedProfile.industry,
-          yearsTrading: updatedProfile.yearsTrading,
-          monthlyTurnover: updatedProfile.monthlyTurnover,
-          amountRequested: updatedProfile.amountRequested
-        });
-        
         // Check if we now have enough information after this update
         const keyFields = [
-          updatedProfile.industry, 
-          updatedProfile.yearsTrading, 
-          updatedProfile.monthlyTurnover, 
-          updatedProfile.amountRequested
+          finalProfile.industry, 
+          finalProfile.yearsTrading, 
+          finalProfile.monthlyTurnover, 
+          finalProfile.amountRequested
         ];
         const filledFields = keyFields.filter(field => field !== undefined && field !== null && field !== '').length;
         
-        console.log(`Have ${filledFields}/4 key fields:`, {
-          industry: updatedProfile.industry,
-          yearsTrading: updatedProfile.yearsTrading,
-          monthlyTurnover: updatedProfile.monthlyTurnover,
-          amountRequested: updatedProfile.amountRequested
-        });
-        
         // First, check if we should unblur the panel (before any early returns)
         if (!hasFirstResponse && data.extracted && Object.keys(data.extracted).length > 0) {
-          console.log('🔍 UNBLUR CHECK - Current state:', {
-            hasFirstResponse,
-            hasUserInput,
-            isProcessing
-          });
-          
-          console.log('🔍 UNBLUR CHECK - Response data:', {
-            hasExtracted: !!data.extracted,
-            extractedKeys: data.extracted ? Object.keys(data.extracted) : [],
-            extractedCount: data.extracted ? Object.keys(data.extracted).length : 0,
-            extractedData: data.extracted
-          });
-          
-          console.log('✅ UNBLURRING: All conditions met!');
-          console.log('✅ Setting hasFirstResponse from false to true');
           setHasFirstResponse(true);
+          setShowMatchesPanel(true);
         }
 
         if (filledFields >= 3) {
-          console.log('Have enough fields (3+)! Setting hasUserInput to true');
-          
           // Check if this is the first time we have enough info
           const previousFields = [profile.industry, profile.yearsTrading, profile.monthlyTurnover, profile.amountRequested];
           const previousFilledCount = previousFields.filter(field => field !== undefined && field !== null && field !== '').length;
@@ -287,23 +277,26 @@ export default function Home() {
             // Use the OpenAI response since it's more detailed and relevant
             setIsProcessing(false);
             const finalResponse = data.summary || 'Got it — I\'ll tune your matches based on your needs';
-            console.log('💬 Completed handleChatMessage with early return. Final state:', { hasFirstResponse, hasUserInput, finalResponse });
             return finalResponse;
           }
-        } else {
-          console.log(`Still need more fields (have ${filledFields}/4, need 3+)`);
         }
       }
       
       setIsProcessing(false);
       
       const finalResponse = data.summary || 'Got it — I\'ll tune your matches based on your needs';
-      console.log('💬 Completed handleChatMessage. Final state:', { hasFirstResponse, hasUserInput, finalResponse });
       return finalResponse;
     } catch (error) {
-      console.error('❌ Error calling GPT API:', error);
+      console.error('❌ CHAT ERROR:', error);
       setIsProcessing(false);
-      return 'Got it — I\'ll tune your matches based on your needs';
+      
+      // Show specific error details
+      if (error instanceof Error) {
+        console.error('❌ ERROR MESSAGE:', error.message);
+        console.error('❌ ERROR STACK:', error.stack);
+      }
+      
+      return 'Sorry, I encountered an error processing your message. Please try again.';
     }
   };
 
@@ -312,6 +305,7 @@ export default function Home() {
     setProfile({});
     setHasUserInput(false);
     setHasFirstResponse(false);
+    setShowMatchesPanel(false);
     setMatches({
       qualified: [],
       notQualified: [],
@@ -324,7 +318,6 @@ export default function Home() {
     // Reset user's business profile while preserving anonymous identity
     try {
       await ConversationTracker.resetUserBusinessProfile();
-      console.log('Business profile reset while preserving user identity');
     } catch (error) {
       console.error('Error resetting business profile:', error);
     }
@@ -377,68 +370,93 @@ export default function Home() {
   ];
 
   return (
-    <div className="min-h-screen bg-slate-50 dark:bg-slate-900 transition-colors duration-200">
-      <header className="bg-white/90 dark:bg-slate-900/90 border-b border-slate-100 dark:border-slate-800 shadow-sm backdrop-blur-sm sticky top-0 z-50 transition-colors duration-200">
-        <div className="max-w-6xl mx-auto px-4 py-5 flex items-center justify-between">
-          <motion.div 
-            initial={{ opacity: 0, x: -20 }}
-            animate={{ opacity: 1, x: 0 }}
-            className="flex items-center gap-3"
-          >
-            <motion.div 
-              whileHover={{ scale: 1.05 }}
-              whileTap={{ scale: 0.95 }}
-              className="cursor-pointer"
-            >
-              <Image 
-                src="/logos/Frank_logo.png"
-                alt="Frank Logo"
-                width={40}
-                height={40}
-                className="object-contain"
-              />
-            </motion.div>
-            <motion.h1 
-              initial={{ opacity: 0, y: -10 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ delay: 0.1 }}
-              className="text-2xl font-bold text-slate-900 dark:text-slate-100 tracking-tight transition-colors duration-200"
-            >
-              rank
-            </motion.h1>
-          </motion.div>
-          <div className="flex items-center gap-4">
-            <motion.span 
-              initial={{ opacity: 0, x: 20 }}
-              animate={{ opacity: 1, x: 0 }}
-              transition={{ delay: 0.3 }}
-              className="flex items-center gap-2 text-sm text-slate-500 dark:text-slate-400 bg-slate-100 dark:bg-slate-800 px-4 py-2 rounded-2xl font-medium shadow-sm"
-            >
-              <div className="w-2 h-2 bg-brand-600 rounded-full animate-pulse"></div>
-              Beta • Demo
-            </motion.span>
-            <motion.div
-              initial={{ opacity: 0, scale: 0.8 }}
-              animate={{ opacity: 1, scale: 1 }}
-              transition={{ delay: 0.4 }}
-            >
-              <ThemeToggle />
-            </motion.div>
-          </div>
+    <div className="h-screen bg-slate-50 relative flex flex-col overflow-hidden">
+      {/* Background blur elements - hide when matches panel is shown */}
+      {!showMatchesPanel && (
+        <div className="fixed inset-0 overflow-hidden pointer-events-none" style={{ height: '100%', width: '100%', opacity: 1 }}>
+        <div 
+          className="absolute rounded-full"
+          style={{
+            backgroundColor: 'rgba(206, 173, 255, 0.6)',
+            filter: 'blur(120px)',
+            willChange: 'transform',
+            opacity: 1,
+            transform: 'translateX(42.5475px) translateY(28.8225px) rotate(49.41deg) skewY(1.3725deg)',
+            width: '500px',
+            height: '500px',
+            top: '5%',
+            left: '5%'
+          }}
+        />
+        <div 
+          className="absolute rounded-full"
+          style={{
+            backgroundColor: 'rgba(161, 228, 178, 0.3)',
+            filter: 'blur(100px)',
+            willChange: 'transform',
+            opacity: 0.97255,
+            transform: 'translateY(-50%) translateX(-120.78px) translateY(2.745px) rotate(48.0375deg)',
+            width: '400px',
+            height: '400px',
+            top: '30%',
+            right: '10%'
+          }}
+        />
+        <div 
+          className="absolute rounded-full"
+          style={{
+            backgroundColor: 'rgba(255, 200, 150, 0.3)',
+            filter: 'blur(100px)',
+            willChange: 'transform',
+            opacity: 0.9726,
+            transform: 'translateX(-50%) translateX(46.58px) translateY(-52.06px) rotate(47.95deg)',
+            width: '350px',
+            height: '350px',
+            bottom: '20%',
+            left: '30%'
+          }}
+        />
+        <div 
+          className="absolute rounded-full"
+          style={{
+            backgroundColor: 'rgba(147, 51, 234, 0.4)',
+            filter: 'blur(150px)',
+            willChange: 'transform',
+            opacity: 0.8,
+            transform: 'rotate(-15deg)',
+            width: '600px',
+            height: '600px',
+            top: '50%',
+            left: '50%',
+            marginLeft: '-300px',
+            marginTop: '-300px'
+          }}
+        />
         </div>
+      )}
+
+      {/* Blur overlay to soften the background - hide when matches panel is shown */}
+      {!showMatchesPanel && (
+        <div className="fixed inset-0 backdrop-blur-md pointer-events-none bg-white/10" />
+      )}
+
+      <header className="z-50 py-4 relative flex-shrink-0">
+        <Navbar onReset={async () => await chatUIRef.current?.resetChat()} />
       </header>
 
-      <main className="max-w-6xl mx-auto px-4 py-8">
+      <main className="flex-1 max-w-6xl mx-auto px-4 py-8 relative z-10 w-full flex flex-col min-h-0 overflow-hidden">
         <motion.div 
           layout
           transition={{ duration: 0.6, ease: "easeInOut" }}
-          className={`grid grid-cols-1 gap-8 ${
+          className={`grid grid-cols-1 gap-8 h-full ${
           mode === 'chat' 
             ? expandedPanel === 'chat' 
               ? 'md:grid-cols-1' 
               : expandedPanel === 'matches'
                 ? 'md:grid-cols-1'
-                : 'md:grid-cols-5'
+                : showMatchesPanel 
+                  ? 'md:grid-cols-5'
+                  : 'md:grid-cols-1'
             : ''
         }`}>
           <motion.div 
@@ -448,7 +466,7 @@ export default function Home() {
               scale: expandedPanel === 'matches' ? 0.95 : 1
             }}
             transition={{ duration: 0.5, ease: "easeInOut" }}
-            className={`space-y-6 ${
+            className={`space-y-6 h-full min-h-0 ${
             mode === 'chat' 
               ? expandedPanel === 'matches' 
                 ? 'hidden md:hidden' 
@@ -466,7 +484,7 @@ export default function Home() {
               <motion.div 
                 layout
                 transition={{ duration: 0.3 }}
-                className="w-full bg-white dark:bg-slate-800 rounded-2xl shadow-sm border border-slate-100 dark:border-slate-700 p-6 sticky top-8 h-[calc(100vh-8rem)] flex flex-col transition-colors duration-200"
+                className="w-full bg-white rounded-2xl shadow-sm border border-slate-100 p-6 sticky top-8 h-[calc(100vh-8rem)] flex flex-col"
               >
                 <div className="space-y-4">
                   <Field
@@ -539,9 +557,10 @@ export default function Home() {
               <motion.div
                 layout
                 transition={{ duration: 0.3 }}
-                className="w-full sticky top-8 h-[calc(100vh-8rem)]"
+                className="w-full h-full min-h-0 flex flex-col overflow-hidden"
               >
                 <ChatUI 
+                  ref={chatUIRef}
                   onMessage={handleChatMessage} 
                   onReset={handleChatReset}
                   onToggleExpand={toggleChatExpansion}
@@ -562,7 +581,7 @@ export default function Home() {
                   initial={{ opacity: 0, y: 20 }}
                   animate={{ opacity: 1, y: 0 }}
                   exit={{ opacity: 0, y: -20 }}
-                  className="bg-white dark:bg-slate-800 rounded-2xl shadow-sm border border-slate-100 dark:border-slate-700 p-6 transition-colors duration-200"
+                  className="bg-white rounded-2xl shadow-sm border border-slate-100 p-6"
                 >
                   <div className="flex items-center gap-4">
                     <div className="w-8 h-8 bg-brand-600 rounded-full flex items-center justify-center">
@@ -573,7 +592,7 @@ export default function Home() {
                       />
                     </div>
                     <div className="flex-1">
-                      <p className="text-sm font-semibold text-slate-900 dark:text-slate-100 mb-2 transition-colors duration-200">Analyzing your profile</p>
+                      <p className="text-sm font-semibold text-slate-900 mb-2">Analyzing your profile</p>
                       <div className="w-full bg-slate-200 rounded-full h-2 overflow-hidden">
                         <motion.div
                           className="h-full bg-brand-600 rounded-full"
@@ -606,7 +625,9 @@ export default function Home() {
                   ease: "easeInOut",
                   layout: { duration: 0.6, ease: "easeInOut" }
                 }}
-                className={`hidden md:block ${
+                className={`${
+                  showMatchesPanel ? 'hidden md:block' : 'hidden'
+                } ${
                   expandedPanel === 'chat' 
                     ? 'md:hidden' 
                     : expandedPanel === 'matches'
@@ -617,7 +638,7 @@ export default function Home() {
                 <motion.div 
                   layout
                   transition={{ duration: 0.3 }}
-                  className="bg-white dark:bg-slate-800 rounded-2xl shadow-sm border border-slate-100 dark:border-slate-700 p-6 h-full flex flex-col transition-colors duration-200 relative"
+                  className="bg-white rounded-2xl shadow-sm border border-slate-100 p-6 h-full flex flex-col relative"
                 >
                   <AnimatePresence>
                     {!hasFirstResponse && (
@@ -625,14 +646,14 @@ export default function Home() {
                         initial={{ opacity: 0 }}
                         animate={{ opacity: 1 }}
                         exit={{ opacity: 0 }}
-                        className="absolute inset-0 bg-slate-50/80 dark:bg-slate-800/80 rounded-2xl flex items-center justify-center backdrop-blur-sm z-10"
+                        className="absolute inset-0 bg-slate-50/80 rounded-2xl flex items-center justify-center backdrop-blur-sm z-10"
                       >
                         <div className="text-center space-y-2">
-                          <div className="w-12 h-12 bg-brand-100 dark:bg-brand-900 rounded-2xl flex items-center justify-center mx-auto">
+                          <div className="w-12 h-12 bg-brand-100 rounded-2xl flex items-center justify-center mx-auto">
                             <span className="text-2xl">💬</span>
                           </div>
-                          <p className="text-sm font-medium text-slate-700 dark:text-slate-300">Start chatting to see your matches</p>
-                          <p className="text-xs text-slate-500 dark:text-slate-400">Tell Frank about your business needs</p>
+                          <p className="text-sm font-medium text-slate-700">Start chatting to see your matches</p>
+                          <p className="text-xs text-slate-500">Tell Frank about your business needs</p>
                         </div>
                       </motion.div>
                     )}
@@ -643,13 +664,13 @@ export default function Home() {
                         <div className="w-6 h-6 bg-brand-600 rounded-lg flex items-center justify-center">
                           <span className="text-white text-sm font-bold">⚡</span>
                         </div>
-                        <h2 className="text-xl font-bold text-slate-900 dark:text-slate-100 transition-colors duration-200">Your Matches</h2>
+                        <h2 className="text-xl font-bold text-slate-900">Your Matches</h2>
                       </div>
                       <motion.button
                         whileHover={{ scale: 1.05, rotate: 5 }}
                         whileTap={{ scale: 0.95 }}
                         onClick={toggleMatchesExpansion}
-                        className="p-2 text-slate-600 hover:text-slate-900 dark:text-slate-400 dark:hover:text-slate-100 bg-slate-50 hover:bg-slate-100 dark:bg-slate-700 dark:hover:bg-slate-600 rounded-full transition-all duration-300 ease-in-out"
+                        className="p-2 text-slate-600 hover:text-slate-900 bg-slate-50 hover:bg-slate-100 rounded-full transition-all duration-300 ease-in-out"
                         title={expandedPanel === 'matches' ? "Minimize matches" : "Expand matches"}
                       >
                         <motion.div

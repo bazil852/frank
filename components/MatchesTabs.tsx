@@ -27,8 +27,8 @@ export default function MatchesTabs({
   const activeIndex = tabs.findIndex(tab => tab.id === activeTab);
   
   return (
-    <div className="relative border-b border-slate-200 dark:border-slate-700 transition-colors duration-200">
-      <div className="flex gap-1 bg-slate-50 dark:bg-slate-700 rounded-2xl p-1 transition-colors duration-200">
+    <div className="relative border-b border-slate-200">
+      <div className="flex gap-1 bg-slate-50 rounded-2xl p-1">
         {tabs.map((tab) => (
           <motion.button
             key={tab.id}
@@ -37,8 +37,8 @@ export default function MatchesTabs({
             whileTap={{ scale: 0.98 }}
             className={`relative flex-1 py-3 px-4 rounded-xl text-sm font-semibold transition-all duration-200 ${
               activeTab === tab.id 
-                ? 'bg-white dark:bg-slate-600 text-slate-900 dark:text-slate-100 shadow-sm' 
-                : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-100 hover:bg-white/50 dark:hover:bg-slate-600/50'
+                ? 'bg-white text-slate-900 shadow-sm' 
+                : 'text-slate-600 hover:text-slate-900 hover:bg-white/50'
             }`}
           >
             <div className="flex items-center justify-center gap-2">
@@ -48,7 +48,7 @@ export default function MatchesTabs({
                   ? tab.color === 'brand' ? 'bg-brand-100 text-brand-700' :
                     tab.color === 'amber' ? 'bg-amber-100 text-amber-700' :
                     'bg-slate-200 text-slate-700'
-                  : 'bg-slate-200 dark:bg-slate-600 text-slate-500 dark:text-slate-400'
+                  : 'bg-slate-200 text-slate-500'
               }`}>
                 {tab.count}
               </span>
