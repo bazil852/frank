@@ -91,12 +91,12 @@ function FullMatchesModal({ isOpen, onClose, matches }: FullMatchesModalProps) {
                   />
                 ))}
 
-                {activeTab === 'needMoreInfo' && matches.needMoreInfo.map((item) => (
+                {activeTab === 'needMoreInfo' && matches.needMoreInfo.map((item, index) => (
                   <FilteredCard
                     key={item.product.id}
                     product={item.product}
                     reasons={item.improvements}
-                    type="improvements"
+                    index={index}
                   />
                 ))}
 
