@@ -68,13 +68,14 @@ export default function CloseMatchCard({ product, reasons, improvements, index }
         </div>
       )}
 
-      <div className="bg-amber-100/50  rounded-xl p-4 border border-amber-200 dark:border-amber-800/50 transition-colors">
-        <h4 className="text-sm font-bold text-amber-800  mb-3 flex items-center gap-2 transition-colors">
-          <TrendingUp size={16} className="text-amber-600" />
-          To qualify:
-        </h4>
-        <div className="space-y-2">
-          {improvements.map((improvement, i) => (
+      {improvements && improvements.length > 0 && (
+        <div className="bg-amber-100/50  rounded-xl p-4 border border-amber-200 dark:border-amber-800/50 transition-colors">
+          <h4 className="text-sm font-bold text-amber-800  mb-3 flex items-center gap-2 transition-colors">
+            <TrendingUp size={16} className="text-amber-600" />
+            To qualify:
+          </h4>
+          <div className="space-y-2">
+            {improvements.map((improvement, i) => (
             <motion.div
               key={i}
               initial={{ opacity: 0, x: -10 }}
@@ -90,6 +91,7 @@ export default function CloseMatchCard({ product, reasons, improvements, index }
           ))}
         </div>
       </div>
+      )}
     </motion.div>
   );
 }

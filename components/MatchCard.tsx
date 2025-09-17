@@ -47,22 +47,24 @@ export default function MatchCard({ product, reasons, onApply, index }: MatchCar
         </div>
       </div>
 
-      <div className="space-y-3 mb-6">
-        {reasons.map((reason, i) => (
-          <motion.div
-            key={i}
-            initial={{ opacity: 0, x: -10 }}
-            animate={{ opacity: 1, x: 0 }}
-            transition={{ delay: (index * 0.05) + (i * 0.1) }}
-            className="flex items-start gap-3"
-          >
-            <div className="w-5 h-5 bg-brand-100 rounded-full flex items-center justify-center mt-0.5 flex-shrink-0">
-              <Check size={12} className="text-brand-600" />
-            </div>
-            <span className="text-sm text-slate-700 leading-relaxed">{reason}</span>
-          </motion.div>
-        ))}
-      </div>
+      {reasons && reasons.length > 0 && (
+        <div className="space-y-3 mb-6">
+          {reasons.map((reason, i) => (
+            <motion.div
+              key={i}
+              initial={{ opacity: 0, x: -10 }}
+              animate={{ opacity: 1, x: 0 }}
+              transition={{ delay: (index * 0.05) + (i * 0.1) }}
+              className="flex items-start gap-3"
+            >
+              <div className="w-5 h-5 bg-brand-100 rounded-full flex items-center justify-center mt-0.5 flex-shrink-0">
+                <Check size={12} className="text-brand-600" />
+              </div>
+              <span className="text-sm text-slate-700 leading-relaxed">{reason}</span>
+            </motion.div>
+          ))}
+        </div>
+      )}
 
       <motion.button
         whileHover={{ scale: 1.02 }}

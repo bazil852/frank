@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Maximize2, Minimize2, MessageSquare, X } from 'lucide-react';
+import { Maximize2, Minimize2 } from 'lucide-react';
 import ModeToggle from '@/components/ModeToggle';
 import Field from '@/components/Field';
 import MatchesTabs from '@/components/MatchesTabs';
@@ -12,6 +12,7 @@ import CloseMatchCard from '@/components/CloseMatchCard';
 import ApplyModal from '@/components/ApplyModal';
 import ChatUI, { ChatUIRef } from '@/components/ChatUI';
 import Navbar from '@/components/Navbar';
+import LenderPills from '@/components/LenderPills';
 import { Profile, filterProducts } from '@/lib/filters';
 import { Product } from '@/lib/catalog';
 import { getLendersFromDB } from '@/lib/db-lenders';
@@ -44,7 +45,6 @@ export default function Home() {
   const [selectedProduct, setSelectedProduct] = useState<Product | null>(null);
   const [showApplyModal, setShowApplyModal] = useState(false);
   const [expandedPanel, setExpandedPanel] = useState<'none' | 'chat' | 'matches'>('none');
-  const [showMobileModal, setShowMobileModal] = useState(false);
   const [showMatchesPanel, setShowMatchesPanel] = useState(false);
 
   const updateProfile = useCallback(async (updates: Partial<Profile>) => {
@@ -208,28 +208,39 @@ export default function Home() {
       console.log('💬 USER MESSAGE:', message);
       setIsProcessing(true);
       
-      // Use GPT for extraction directly - no fallbacks
-      const quickExtraction = await FrankAI.chat(message, chatHistory || [], profile, products, undefined);
-      console.log('🔍 GPT QUICK EXTRACTION:', quickExtraction.extracted);
+      // STEP 1: Extract data only (no response generation yet)
+      const extractionResult = await FrankAI.chat(message, chatHistory || [], profile, products, undefined);
+      console.log('🔍 EXTRACTION RESULT:', extractionResult.extracted);
       
-      // Create updated profile with any new extracted data
-      const updatedProfile = { ...profile, ...quickExtraction.extracted };
+      let updatedProfile = profile;
+      let currentMatches = matches;
       
-      // Now get FRESH match results with the updated profile for AI context
-      const currentMatches = filterProducts(updatedProfile, products);
-      console.log('🎯 FRESH MATCH RESULTS FOR AI:', {
-        qualified: currentMatches.qualified.length,
-        needMoreInfo: currentMatches.needMoreInfo.length,
-        notQualified: currentMatches.notQualified.length
-      });
+      // STEP 2: If we extracted new data, update profile and side panel
+      if (extractionResult.extracted && Object.keys(extractionResult.extracted).length > 0) {
+        updatedProfile = { ...profile, ...extractionResult.extracted };
+        
+        // Calculate fresh matches with updated profile
+        currentMatches = filterProducts(updatedProfile, products);
+        console.log('🎯 UPDATED MATCHES AFTER EXTRACTION:', {
+          qualified: currentMatches.qualified.length,
+          needMoreInfo: currentMatches.needMoreInfo.length,
+          notQualified: currentMatches.notQualified.length
+        });
+        
+        // Update UI state immediately
+        setProfile(updatedProfile);
+        setMatches(currentMatches);
+        
+        // Wait a bit for state updates to propagate
+        await new Promise(resolve => setTimeout(resolve, 100));
+      }
       
-      // Use frontend OpenAI client with fresh match data
-      const data = await FrankAI.chat(message, chatHistory || [], updatedProfile, products, currentMatches);
-      console.log('🤖 AI RESPONSE:', data.summary);
-      console.log('🔍 AI EXTRACTED:', data.extracted);
+      // STEP 3: Now generate response with latest data and full lender details
+      const responseResult = await FrankAI.chat(message, chatHistory || [], updatedProfile, products, currentMatches);
+      console.log('🤖 AI RESPONSE:', responseResult.summary);
       
       // Log extraction progress
-      const finalProfile = { ...profile, ...data.extracted };
+      const finalProfile = updatedProfile;
       const requiredFields = ['industry', 'yearsTrading', 'monthlyTurnover', 'amountRequested'];
       const optionalFields = ['vatRegistered', 'collateralAcceptable', 'province', 'useOfFunds', 'urgencyDays'];
       
@@ -244,10 +255,7 @@ export default function Home() {
         currentProfile: finalProfile
       });
       
-      if (data.extracted && Object.keys(data.extracted).length > 0) {
-        // Use updateProfile to ensure filtering is triggered
-        updateProfile(data.extracted);
-        
+      if (extractionResult.extracted && Object.keys(extractionResult.extracted).length > 0) {        
         // Check if we now have enough information after this update
         const keyFields = [
           finalProfile.industry, 
@@ -258,7 +266,7 @@ export default function Home() {
         const filledFields = keyFields.filter(field => field !== undefined && field !== null && field !== '').length;
         
         // First, check if we should unblur the panel (before any early returns)
-        if (!hasFirstResponse && data.extracted && Object.keys(data.extracted).length > 0) {
+        if (!hasFirstResponse && extractionResult.extracted && Object.keys(extractionResult.extracted).length > 0) {
           setHasFirstResponse(true);
           setShowMatchesPanel(true);
         }
@@ -276,7 +284,7 @@ export default function Home() {
             
             // Use the OpenAI response since it's more detailed and relevant
             setIsProcessing(false);
-            const finalResponse = data.summary || 'Got it — I\'ll tune your matches based on your needs';
+            const finalResponse = responseResult.summary || 'Got it — I\'ll tune your matches based on your needs';
             return finalResponse;
           }
         }
@@ -284,7 +292,7 @@ export default function Home() {
       
       setIsProcessing(false);
       
-      const finalResponse = data.summary || 'Got it — I\'ll tune your matches based on your needs';
+      const finalResponse = responseResult.summary || 'Got it — I\'ll tune your matches based on your needs';
       return finalResponse;
     } catch (error) {
       console.error('❌ CHAT ERROR:', error);
@@ -336,9 +344,6 @@ export default function Home() {
     setExpandedPanel(prev => prev === 'matches' ? 'none' : 'matches');
   };
 
-  const toggleMobileModal = () => {
-    setShowMobileModal(prev => !prev);
-  };
 
   const industries = [
     { value: 'Retail', label: 'Retail' },
@@ -443,6 +448,9 @@ export default function Home() {
       <header className="z-50 py-4 relative flex-shrink-0">
         <Navbar onReset={async () => await chatUIRef.current?.resetChat()} />
       </header>
+
+      {/* Lender Pills - Mobile only, shown between navbar and chat when user has interacted */}
+      <LenderPills matches={matches} hasUserInput={hasUserInput} />
 
       <main className="flex-1 max-w-6xl mx-auto px-4 py-8 relative z-10 w-full flex flex-col min-h-0 overflow-hidden">
         <motion.div 
@@ -915,179 +923,7 @@ export default function Home() {
           )}
         </motion.div>
 
-        {/* Mobile Floating Recommendations Button */}
-        {hasUserInput && mode === 'chat' && (
-          <motion.button
-            initial={{ scale: 0, opacity: 0 }}
-            animate={{ scale: 1, opacity: 1 }}
-            exit={{ scale: 0, opacity: 0 }}
-            transition={{ type: "spring", stiffness: 300, damping: 25 }}
-            whileHover={{ scale: 1.1 }}
-            whileTap={{ scale: 0.95 }}
-            onClick={toggleMobileModal}
-            className="md:hidden fixed bottom-6 right-6 w-14 h-14 bg-brand-600 hover:bg-brand-700 text-white rounded-full shadow-lg flex items-center justify-center z-50 transition-colors duration-200"
-            title="View recommendations"
-          >
-            <MessageSquare size={24} />
-            {matches.qualified.length > 0 && (
-              <motion.div
-                initial={{ scale: 0 }}
-                animate={{ scale: 1 }}
-                className="absolute -top-2 -right-2 w-6 h-6 bg-red-500 text-white text-xs font-bold rounded-full flex items-center justify-center"
-              >
-                {matches.qualified.length}
-              </motion.div>
-            )}
-          </motion.button>
-        )}
       </main>
-
-      {/* Mobile Recommendations Modal */}
-      <AnimatePresence>
-        {showMobileModal && (
-          <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            className="md:hidden fixed inset-0 bg-black/50 z-50 flex items-end"
-            onClick={toggleMobileModal}
-          >
-            <motion.div
-              initial={{ y: "100%" }}
-              animate={{ y: 0 }}
-              exit={{ y: "100%" }}
-              transition={{ type: "spring", stiffness: 300, damping: 30 }}
-              className="w-full bg-white dark:bg-slate-900 rounded-t-2xl max-h-[85vh] flex flex-col"
-              onClick={(e) => e.stopPropagation()}
-            >
-              {/* Modal Header */}
-              <div className="flex items-center justify-between p-6 border-b border-slate-200 dark:border-slate-700">
-                <div className="flex items-center gap-3">
-                  <div className="w-6 h-6 bg-brand-600 rounded-lg flex items-center justify-center">
-                    <span className="text-white text-sm font-bold">⚡</span>
-                  </div>
-                  <h2 className="text-xl font-bold text-slate-900 dark:text-slate-100">Recommendations</h2>
-                </div>
-                <motion.button
-                  whileHover={{ scale: 1.1 }}
-                  whileTap={{ scale: 0.9 }}
-                  onClick={toggleMobileModal}
-                  className="p-2 text-slate-600 hover:text-slate-900 dark:text-slate-400 dark:hover:text-slate-100 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 rounded-full"
-                >
-                  <X size={20} />
-                </motion.button>
-              </div>
-
-              {/* Modal Content */}
-              <div className="flex-1 overflow-y-auto">
-                <div className="p-6">
-                  <MatchesTabs
-                    qualifiedCount={matches.qualified.length}
-                    notQualifiedCount={matches.notQualified.length}
-                    needMoreInfoCount={matches.needMoreInfo.length}
-                    activeTab={activeTab}
-                    onTabChange={setActiveTab}
-                  />
-
-                  <div className="mt-6">
-                    <AnimatePresence mode="wait">
-                      {activeTab === 'qualified' ? (
-                        <motion.div
-                          key="qualified"
-                          initial={{ opacity: 0 }}
-                          animate={{ opacity: 1 }}
-                          exit={{ opacity: 0 }}
-                          className="space-y-4"
-                        >
-                          {matches.qualified.length > 0 ? (
-                            matches.qualified.map((product, index) => (
-                              <MatchCard
-                                key={product.id}
-                                product={product}
-                                reasons={matchReasons[product.id] || [
-                                  'Meets basic requirements',
-                                  'Good fit for your profile',
-                                  'Fast approval process'
-                                ]}
-                                onApply={() => {
-                                  handleApply(product);
-                                  setShowMobileModal(false);
-                                }}
-                                index={index}
-                              />
-                            ))
-                          ) : (
-                            <div className="text-center py-12">
-                              <div className="w-12 h-12 bg-slate-100 dark:bg-slate-800 rounded-2xl flex items-center justify-center mx-auto mb-3">
-                                <span className="text-2xl">🔍</span>
-                              </div>
-                              <p className="text-slate-700 dark:text-slate-300 font-medium">No matches yet</p>
-                              <p className="text-sm text-slate-500 dark:text-slate-400 mt-1">Keep sharing details to find matches</p>
-                            </div>
-                          )}
-                        </motion.div>
-                      ) : activeTab === 'needMoreInfo' ? (
-                        <motion.div
-                          key="close"
-                          initial={{ opacity: 0 }}
-                          animate={{ opacity: 1 }}
-                          exit={{ opacity: 0 }}
-                          className="space-y-4"
-                        >
-                          {matches.needMoreInfo.length > 0 ? (
-                            matches.needMoreInfo.map((item, index) => (
-                              <CloseMatchCard
-                                key={item.product.id}
-                                product={item.product}
-                                reasons={item.reasons}
-                                improvements={item.improvements}
-                                index={index}
-                              />
-                            ))
-                          ) : (
-                            <div className="text-center py-12">
-                              <div className="w-12 h-12 bg-slate-100 dark:bg-slate-800 rounded-2xl flex items-center justify-center mx-auto mb-3">
-                                <span className="text-2xl">📋</span>
-                              </div>
-                              <p className="text-slate-700 dark:text-slate-300 font-medium">No close matches</p>
-                            </div>
-                          )}
-                        </motion.div>
-                      ) : (
-                        <motion.div
-                          key="notQualified"
-                          initial={{ opacity: 0 }}
-                          animate={{ opacity: 1 }}
-                          exit={{ opacity: 0 }}
-                          className="space-y-4"
-                        >
-                          {matches.notQualified.length > 0 ? (
-                            matches.notQualified.map((item, index) => (
-                              <FilteredCard
-                                key={item.product.id}
-                                product={item.product}
-                                reasons={item.reasons}
-                                index={index}
-                              />
-                            ))
-                          ) : (
-                            <div className="text-center py-12">
-                              <div className="w-12 h-12 bg-slate-100 dark:bg-slate-800 rounded-2xl flex items-center justify-center mx-auto mb-3">
-                                <span className="text-2xl">✅</span>
-                              </div>
-                              <p className="text-slate-700 dark:text-slate-300 font-medium">All lenders qualify so far</p>
-                            </div>
-                          )}
-                        </motion.div>
-                      )}
-                    </AnimatePresence>
-                  </div>
-                </div>
-              </div>
-            </motion.div>
-          </motion.div>
-        )}
-      </AnimatePresence>
 
       <ApplyModal
         isOpen={showApplyModal}

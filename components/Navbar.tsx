@@ -39,10 +39,9 @@ export default function Navbar({ className = '', onReset }: NavbarProps) {
         }}
       >
         <div 
-          className="flex items-center justify-center gap-2.5 w-full min-h-min p-3 relative overflow-hidden"
+          className="flex items-center justify-between w-full min-h-min p-3 relative overflow-hidden"
           style={{
             flexFlow: 'row',
-            placeContent: 'center',
             alignItems: 'center',
             gap: '10px',
             width: '1200px',
@@ -54,7 +53,7 @@ export default function Navbar({ className = '', onReset }: NavbarProps) {
             maxWidth: '100%'
           }}
         >
-          {/* Logo */}
+          {/* Logo - Left edge on both mobile and desktop */}
           <div className="flex items-center">
             <Link href="/" className="flex items-center">
               <Image 
@@ -68,8 +67,8 @@ export default function Navbar({ className = '', onReset }: NavbarProps) {
             </Link>
           </div>
 
-          {/* Desktop Navigation */}
-          <div className="hidden md:flex items-center space-x-8 flex-1 justify-center">
+          {/* Desktop Navigation - Center */}
+          <div className="hidden md:flex items-center space-x-8 absolute left-1/2 transform -translate-x-1/2">
             {navItems.map((item) => (
               <Link
                 key={item.label}
@@ -92,7 +91,7 @@ export default function Navbar({ className = '', onReset }: NavbarProps) {
             ))}
           </div>
 
-          {/* CTA Button and Reset */}
+          {/* CTA Button and Reset - Desktop only, positioned at right */}
           <div className="hidden md:flex items-center gap-3">
             <motion.button
               whileHover={{ scale: 1.02 }}
@@ -118,7 +117,7 @@ export default function Navbar({ className = '', onReset }: NavbarProps) {
             )}
           </div>
 
-          {/* Mobile Menu Button */}
+          {/* Mobile Menu Button - Right side */}
           <button
             onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)}
             className="md:hidden p-2 text-slate-600 hover:text-slate-900 transition-colors duration-200"
