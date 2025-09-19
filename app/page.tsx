@@ -203,7 +203,11 @@ export default function Home() {
     return () => clearTimeout(timer);
   }, [profile, fetchProductReasons, products, loadingProducts]);
 
-  const handleChatMessage = async (message: string, chatHistory?: Array<{role: 'system' | 'user' | 'assistant', content: string}>, personality?: string): Promise<string> => {
+  const handleChatMessage = async (
+    message: string, 
+    chatHistory?: Array<{role: 'system' | 'user' | 'assistant', content: string}>, 
+    personality?: string
+  ): Promise<string> => {
     try {
       console.log('💬 USER MESSAGE:', message);
       setIsProcessing(true);

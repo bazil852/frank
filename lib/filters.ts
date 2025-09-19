@@ -57,13 +57,8 @@ export function filterProducts(
     if (profile.yearsTrading === undefined) {
       missingRequirements.push(`Requires ${product.minYears}+ years trading history`);
     } else if (profile.yearsTrading < product.minYears) {
-      const yearsDiff = product.minYears - profile.yearsTrading;
-      if (yearsDiff <= 1) {
-        improvements.push(`Need ${yearsDiff} more year${yearsDiff === 1 ? '' : 's'} trading`);
-        closeMatchCount++;
-      } else {
-        reasons.push(`Min ${product.minYears}y trading required, you have ${profile.yearsTrading}y`);
-      }
+      // Years trading is a hard requirement - can't be changed quickly
+      reasons.push(`Min ${product.minYears}y trading required, you have ${profile.yearsTrading}y`);
     }
 
     // Check monthly turnover

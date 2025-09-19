@@ -74,23 +74,15 @@ export default function CloseMatchCard({ product, reasons, improvements, index }
             <TrendingUp size={16} className="text-amber-600" />
             To qualify:
           </h4>
-          <div className="space-y-2">
-            {improvements.map((improvement, i) => (
-            <motion.div
-              key={i}
-              initial={{ opacity: 0, x: -10 }}
-              animate={{ opacity: 1, x: 0 }}
-              transition={{ delay: (index * 0.05) + (reasons.length * 0.1) + (i * 0.1) }}
-              className="flex items-start gap-3"
-            >
-              <div className="w-5 h-5 bg-brand-100 rounded-full flex items-center justify-center mt-0.5 flex-shrink-0">
-                <TrendingUp size={12} className="text-brand-600" />
-              </div>
-              <span className="text-sm text-amber-700  leading-relaxed transition-colors">{improvement}</span>
-            </motion.div>
-          ))}
+          <motion.p
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            transition={{ delay: (index * 0.05) + (reasons.length * 0.1) }}
+            className="text-sm text-amber-700 leading-relaxed transition-colors"
+          >
+            {improvements.join('. ')}. These improvements would make your business eligible for this financing option.
+          </motion.p>
         </div>
-      </div>
       )}
     </motion.div>
   );

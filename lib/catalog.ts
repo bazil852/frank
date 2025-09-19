@@ -2,7 +2,7 @@ export type Product = {
   id: string;
   provider: string;
   logo: string;
-  productType: 'Working Capital' | 'Invoice Discounting' | 'Merchant Cash Advance' | 'Asset Finance' | 'Term Loan';
+  productType: 'Working Capital' | 'Invoice Discounting' | 'Merchant Cash Advance' | 'Asset Finance' | 'Term Loan' | 'Revenue-Based Finance';
   amountMin: number;
   amountMax: number;
   minYears: number;
@@ -14,6 +14,46 @@ export type Product = {
   collateralRequired?: boolean;
   interestRate?: [number, number]; // [min, max] annual percentage rates
   notes?: string;
+  repaymentStyle?: string; // e.g., "Weekly debit", "% of sales", "Monthly installment"
+};
+
+export const PRODUCT_TYPE_EXPLAINERS = {
+  'Working Capital': {
+    repaymentStyle: 'Fixed weekly/monthly debit',
+    bestFor: 'Predictable, steady revenue businesses',
+    watchOutFor: 'Same repayment even during slow months',
+    analogy: 'Like a gym membership — same amount every period'
+  },
+  'Merchant Cash Advance': {
+    repaymentStyle: '% of card sales',
+    bestFor: 'Seasonal/fluctuating revenue',
+    watchOutFor: 'Can cost more if sales spike',
+    analogy: 'Like a bar tab — repay as you sell'
+  },
+  'Revenue-Based Finance': {
+    repaymentStyle: '% of monthly turnover',
+    bestFor: 'High-growth, recurring revenue',
+    watchOutFor: 'Term can extend if revenue drops',
+    analogy: 'They take a cut of your monthly turnover'
+  },
+  'Invoice Discounting': {
+    repaymentStyle: 'Sell invoice, get % upfront',
+    bestFor: 'Long debtor cycles (30-90 days)',
+    watchOutFor: 'Fees per invoice, client payment risk',
+    analogy: 'Basically selling your invoice to get paid early'
+  },
+  'Term Loan': {
+    repaymentStyle: 'Monthly installment',
+    bestFor: 'Quick cash gaps, expansion',
+    watchOutFor: 'Higher rates than banks',
+    analogy: 'Traditional loan with fixed monthly payments'
+  },
+  'Asset Finance': {
+    repaymentStyle: 'Fixed monthly repayment',
+    bestFor: 'Equipment or vehicle needs',
+    watchOutFor: 'Asset is security — you lose it if you default',
+    analogy: 'Buy now, pay later for business equipment'
+  }
 };
 
 export const PRODUCTS: Product[] = [

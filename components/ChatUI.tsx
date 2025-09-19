@@ -199,6 +199,7 @@ const ChatUI = forwardRef<ChatUIRef, ChatUIProps>(({
       // Update conversation metadata with personality
       await ConversationTracker.updateConversationMetadata({}, personality);
       
+      // Add bot message with typing animation
       setTimeout(() => {
         const botMessage: Message = {
           id: (Date.now() + 1).toString(),
