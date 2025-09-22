@@ -18,7 +18,7 @@ import { Product } from '@/lib/catalog';
 import { getLendersFromDB } from '@/lib/db-lenders';
 import { useUserTracking } from '@/hooks/useUserTracking';
 import { ConversationTracker } from '@/lib/db-conversations';
-import { FrankAI } from '@/lib/openai-client';
+import { FrankAI, GPTResponse } from '@/lib/openai-client';
 
 export default function Home() {
   const { userId, sessionId, trackEvent, trackApplication } = useUserTracking();
@@ -213,7 +213,7 @@ export default function Home() {
       setIsProcessing(true);
       
       // STEP 1: Extract data only (no response generation yet)
-      const extractionResult = await FrankAI.chat(message, chatHistory || [], profile, products, undefined);
+      const extractionResult = await FrankAI.chat(message, chatHistory || [], profile, products, undefined) as GPTResponse;
       console.log('🔍 EXTRACTION RESULT:', extractionResult.extracted);
       
       let updatedProfile = profile;
@@ -240,7 +240,7 @@ export default function Home() {
       }
       
       // STEP 3: Now generate response with latest data and full lender details
-      const responseResult = await FrankAI.chat(message, chatHistory || [], updatedProfile, products, currentMatches);
+      const responseResult = await FrankAI.chat(message, chatHistory || [], updatedProfile, products, currentMatches) as GPTResponse;
       console.log('🤖 AI RESPONSE:', responseResult.summary);
       
       // Log extraction progress
