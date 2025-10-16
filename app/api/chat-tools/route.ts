@@ -151,6 +151,8 @@ async function processConversation(
     console.log(`\n🔄 Iteration ${iteration}/${maxIterations}`);
 
     try {
+      console.log(`🔧 [Iteration ${iteration}] Calling OpenAI with ${conversationItems.length} items`);
+
       // Call OpenAI without streaming
       const response = await openai.responses.create({
         model: "gpt-5",
@@ -158,7 +160,15 @@ async function processConversation(
         tools: allTools as any,
         parallel_tool_calls: false,
         store: true,
-      } as any);
+      } as any).catch((err: any) => {
+        console.error('❌ OpenAI API call failed:', {
+          error: err.message,
+          status: err.status,
+          code: err.code,
+          type: err.type
+        });
+        throw err;
+      });
 
       console.log('📤 Model response:', {
         outputItems: response.output?.length,
