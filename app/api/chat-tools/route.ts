@@ -7,6 +7,11 @@ const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY || process.env.NEXT_PUBLIC_OPENAI_API_KEY,
 });
 
+// Allow model to be configurable via env var, with fallback to gpt-5
+const MODEL = process.env.OPENAI_MODEL || "gpt-5";
+
+console.log('🤖 OpenAI client initialized with model:', MODEL);
+
 const SYSTEM_PROMPT = `You are Frank — SA funding matcher. Sharp, helpful, conversational.
 
 **CRITICAL: ALWAYS RESPOND WITH TEXT AFTER YOUR REASONING**
@@ -155,7 +160,7 @@ async function processConversation(
 
       // Call OpenAI without streaming
       const response = await openai.responses.create({
-        model: "gpt-5",
+        model: MODEL,
         input: conversationItems,
         tools: allTools as any,
         parallel_tool_calls: false,
