@@ -64,8 +64,23 @@ export async function POST(request: NextRequest) {
       message: message?.substring(0, 100),
       historyLength: chatHistory.length,
       userId,
-      sessionId
+      sessionId,
+      hasApiKey: !!(process.env.OPENAI_API_KEY || process.env.NEXT_PUBLIC_OPENAI_API_KEY)
     });
+
+    // Check if OpenAI API key is configured
+    if (!process.env.OPENAI_API_KEY && !process.env.NEXT_PUBLIC_OPENAI_API_KEY) {
+      console.error('❌ OpenAI API key not configured');
+      return NextResponse.json(
+        {
+          summary: 'OpenAI API key is not configured. Please add OPENAI_API_KEY to environment variables.',
+          toolCallsMade: 0,
+          success: false,
+          error: 'OPENAI_API_KEY not configured'
+        },
+        { status: 500 }
+      );
+    }
 
     if (!message) {
       return NextResponse.json(
@@ -103,6 +118,11 @@ export async function POST(request: NextRequest) {
     });
   } catch (error) {
     console.error('❌ Chat Tools API error:', error);
+    console.error('❌ Error details:', {
+      message: error instanceof Error ? error.message : 'Unknown error',
+      stack: error instanceof Error ? error.stack : undefined,
+      name: error instanceof Error ? error.name : undefined
+    });
 
     return NextResponse.json(
       {
@@ -228,11 +248,14 @@ async function processConversation(
       // Continue loop to get model's next response
     } catch (error) {
       console.error('❌ Chat iteration error:', error);
+      console.error('❌ Iteration error details:', {
+        iteration,
+        message: error instanceof Error ? error.message : 'Unknown error',
+        stack: error instanceof Error ? error.stack : undefined,
+        conversationLength: conversationItems.length
+      });
 
-      return {
-        summary: "I encountered an error processing your request. Please try again.",
-        toolCallsMade
-      };
+      throw error; // Re-throw to be caught by outer try-catch for better error reporting
     }
   }
 
