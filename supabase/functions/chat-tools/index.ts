@@ -260,55 +260,46 @@ async function processConversation(
   }
 }
 
-// Tool definitions
+// Tool definitions - flat format for Responses API
 function getTools() {
   return [
     {
-      type: 'function',
-      function: {
-        name: 'get_business_profile',
-        description: 'Retrieve the current business profile for a user',
-        parameters: {
-          type: 'object',
-          properties: {},
-          required: []
+      name: 'get_business_profile',
+      description: 'Retrieve the current business profile for a user',
+      parameters: {
+        type: 'object',
+        properties: {},
+        required: []
+      }
+    },
+    {
+      name: 'update_business_profile',
+      description: 'Update business profile with extracted information',
+      parameters: {
+        type: 'object',
+        properties: {
+          industry: { type: 'string', description: 'Business industry' },
+          yearsTrading: { type: 'number', description: 'Years in business' },
+          monthlyTurnover: { type: 'number', description: 'Monthly turnover in Rands' },
+          amountRequested: { type: 'number', description: 'Funding amount requested' },
+          useOfFunds: { type: 'string', description: 'How funds will be used' },
+          urgencyDays: { type: 'number', description: 'Urgency in days' },
+          province: { type: 'string', description: 'SA province' },
+          vatRegistered: { type: 'boolean', description: 'VAT registration status' },
+          saRegistered: { type: 'boolean', description: 'SA company registration' },
+          saDirector: { type: 'boolean', description: 'Has SA director' },
+          bankStatements: { type: 'boolean', description: 'Has bank statements' },
+          collateralAcceptable: { type: 'boolean', description: 'Collateral available' }
         }
       }
     },
     {
-      type: 'function',
-      function: {
-        name: 'update_business_profile',
-        description: 'Update business profile with extracted information',
-        parameters: {
-          type: 'object',
-          properties: {
-            industry: { type: 'string', description: 'Business industry' },
-            yearsTrading: { type: 'number', description: 'Years in business' },
-            monthlyTurnover: { type: 'number', description: 'Monthly turnover in Rands' },
-            amountRequested: { type: 'number', description: 'Funding amount requested' },
-            useOfFunds: { type: 'string', description: 'How funds will be used' },
-            urgencyDays: { type: 'number', description: 'Urgency in days' },
-            province: { type: 'string', description: 'SA province' },
-            vatRegistered: { type: 'boolean', description: 'VAT registration status' },
-            saRegistered: { type: 'boolean', description: 'SA company registration' },
-            saDirector: { type: 'boolean', description: 'Has SA director' },
-            bankStatements: { type: 'boolean', description: 'Has bank statements' },
-            collateralAcceptable: { type: 'boolean', description: 'Collateral available' }
-          }
-        }
-      }
-    },
-    {
-      type: 'function',
-      function: {
-        name: 'search_lenders',
-        description: 'Search for matching lenders based on profile',
-        parameters: {
-          type: 'object',
-          properties: {
-            useCurrentProfile: { type: 'boolean', description: 'Use stored profile' }
-          }
+      name: 'search_lenders',
+      description: 'Search for matching lenders based on profile',
+      parameters: {
+        type: 'object',
+        properties: {
+          useCurrentProfile: { type: 'boolean', description: 'Use stored profile' }
         }
       }
     }
