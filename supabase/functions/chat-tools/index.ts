@@ -324,9 +324,10 @@ async function executeToolCall(
 
   switch (name) {
     case 'get_business_profile': {
+      // Get profile from anonymous_users table
       const { data, error } = await supabase
-        .from('business_profiles')
-        .select('*')
+        .from('anonymous_users')
+        .select('business_profile')
         .eq('user_id', userId)
         .single()
 
@@ -335,15 +336,30 @@ async function executeToolCall(
         return { success: false, profile: {}, message: 'Database error' }
       }
 
-      return { success: true, profile: data?.profile_data || {}, message: data ? 'Profile found' : 'No existing profile found' }
+      return {
+        success: true,
+        profile: data?.business_profile || {},
+        message: data ? 'Profile found' : 'No existing profile found'
+      }
     }
 
     case 'update_business_profile': {
+      // Merge new data with existing profile
+      const { data: existing } = await supabase
+        .from('anonymous_users')
+        .select('business_profile')
+        .eq('user_id', userId)
+        .single()
+
+      const mergedProfile = { ...(existing?.business_profile || {}), ...args }
+
+      // Upsert into anonymous_users
       const { error } = await supabase
-        .from('business_profiles')
+        .from('anonymous_users')
         .upsert({
           user_id: userId,
-          profile_data: args,
+          business_profile: mergedProfile,
+          last_seen: new Date().toISOString(),
           updated_at: new Date().toISOString()
         }, {
           onConflict: 'user_id'
@@ -354,7 +370,12 @@ async function executeToolCall(
         return { success: false, message: 'Failed to update profile' }
       }
 
-      return { success: true, message: 'Profile updated', fieldsUpdated: Object.keys(args) }
+      return {
+        success: true,
+        message: 'Profile updated',
+        fieldsUpdated: Object.keys(args),
+        profile: mergedProfile
+      }
     }
 
     case 'search_lenders': {
