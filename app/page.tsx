@@ -197,10 +197,20 @@ export default function Home() {
       console.log('💬 USER MESSAGE:', message);
       setIsProcessing(true);
 
-      // Use non-streaming API endpoint
-      const response = await fetch('/api/chat-tools', {
+      // Use Supabase Edge Function (has 150s timeout vs Netlify's 10-26s)
+      const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL;
+      const apiUrl = SUPABASE_URL
+        ? `${SUPABASE_URL}/functions/v1/chat-tools`
+        : '/api/chat-tools'; // Fallback to Netlify function
+
+      console.log('🌐 Calling API:', apiUrl);
+
+      const response = await fetch(apiUrl, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY}`
+        },
         body: JSON.stringify({
           message,
           chatHistory: chatHistory || [],
