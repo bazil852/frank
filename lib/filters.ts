@@ -1,4 +1,6 @@
 import { Product } from './catalog';
+import { formatAmount } from './format-utils';
+import { formatRand } from './requirements';
 
 export type Profile = {
   industry?: string;
@@ -10,6 +12,9 @@ export type Profile = {
   urgencyDays?: number;
   province?: string;
   collateralAcceptable?: boolean;
+  saRegistered?: boolean;  // New: SA business registration
+  saDirector?: boolean;    // New: SA director requirement
+  bankStatements?: boolean; // New: 6+ months bank statements
   contact?: {
     name?: string;
     email?: string;
@@ -29,6 +34,62 @@ type NeedMoreInfoProduct = {
 };
 
 type ScoredProduct = Product & { score: number };
+
+export function pickSmallContext(matches: {
+  qualified: Product[];
+  notQualified: FilteredProduct[];
+  needMoreInfo: NeedMoreInfoProduct[];
+}) {
+  return {
+    qualified: matches.qualified.slice(0, 5),
+    needMoreInfo: matches.needMoreInfo.slice(0, 3),
+    notQualified: matches.notQualified.slice(0, 2)
+  };
+}
+
+export function missingKeys(profile: Partial<Profile>): string[] {
+  const required = ["monthlyTurnover", "yearsTrading", "amountRequested", "province", "vatRegistered"];
+  return required.filter(k => profile[k as keyof Profile] === undefined);
+}
+
+export function sortByRefine(products: Product[], refine: "cost" | "speed" | "repayment" | "term" | "no-penalty") {
+  switch (refine) {
+    case "speed": 
+      return [...products].sort((a,b) => a.speedDays[0] - b.speedDays[0]);
+    case "cost": 
+      return [...products].sort((a,b) => (a.interestRate?.[0] ?? 99) - (b.interestRate?.[0] ?? 99));
+    case "repayment": 
+      return [...products].sort((a,b) => rankRepay(a) - rankRepay(b));
+    default: 
+      return products;
+  }
+}
+
+const rankRepay = (p: Product) => {
+  // Fixed monthly first, then others
+  if (p.productType === 'Term Loan' || p.productType === 'Working Capital') return 0;
+  if (p.productType === 'Asset Finance') return 1;
+  return 2; // MCA, Invoice, Revenue-based
+};
+
+export function computeLevers(profile: Partial<Profile>, matches: ReturnType<typeof filterProducts>) {
+  const levers: string[] = [];
+  
+  if (profile.amountRequested && matches.qualified.length < 3) {
+    const lower = Math.round(profile.amountRequested * 0.75);
+    levers.push(`Drop to ${formatRand(lower)} → likely +matches`);
+  }
+  
+  if (profile.urgencyDays && profile.urgencyDays <= 2) {
+    levers.push(`If you can wait 3–5 days → more options`);
+  }
+  
+  if (profile.collateralAcceptable === false) {
+    levers.push(`If collateral becomes okay → more lenders`);
+  }
+  
+  return levers;
+}
 
 export function filterProducts(
   profile: Profile,
@@ -53,77 +114,105 @@ export function filterProducts(
     const missingRequirements: string[] = [];
     let closeMatchCount = 0;
 
-    // Track missing critical information
-    if (profile.yearsTrading === undefined) {
-      missingRequirements.push(`Requires ${product.minYears}+ years trading history`);
-    } else if (profile.yearsTrading < product.minYears) {
-      // Years trading is a hard requirement - can't be changed quickly
+    // HARD REQUIREMENTS - Cannot be changed
+    
+    // SA Registration (hard requirement for all SA lenders)
+    if (profile.saRegistered === false) {
+      reasons.push('Must be registered SA business');
+    }
+    
+    // SA Director (hard requirement only if lender requires it)
+    if (product.saDirectorRequired && profile.saDirector === false) {
+      reasons.push('Must have at least one SA director');
+    }
+    
+    // Bank Statements (hard requirement for all)
+    if (profile.bankStatements === false) {
+      reasons.push('6+ months bank statements required');
+    }
+    
+    // Only ask for missing hard requirements if we have the basics (turnover, years, amount)
+    const hasBasics = profile.monthlyTurnover !== undefined && 
+                     profile.yearsTrading !== undefined && 
+                     profile.amountRequested !== undefined;
+    
+    if (!hasBasics) {
+      // Missing core business info - can't evaluate any lender properly
+      missingRequirements.push('Need core business information first');
+    } else {
+      // We have basics, now check specific missing fields for this lender
+      if (profile.saRegistered === undefined) {
+        missingRequirements.push('SA business registration status needed');
+      }
+      
+      if (product.saDirectorRequired && profile.saDirector === undefined) {
+        missingRequirements.push('SA director status needed');
+      }
+      
+      if (profile.bankStatements === undefined) {
+        missingRequirements.push('Bank statement availability needed');
+      }
+    }
+    
+    // Years Trading (hard requirement - cannot be changed)
+    if (hasBasics && profile.yearsTrading !== undefined && profile.yearsTrading < product.minYears) {
       reasons.push(`Min ${product.minYears}y trading required, you have ${profile.yearsTrading}y`);
     }
 
-    // Check monthly turnover
-    if (profile.monthlyTurnover === undefined) {
-      missingRequirements.push(`Requires R${(product.minMonthlyTurnover / 1000).toFixed(0)}k+ monthly turnover`);
-    } else if (profile.monthlyTurnover < product.minMonthlyTurnover) {
-      const shortfall = product.minMonthlyTurnover - profile.monthlyTurnover;
-      const shortfallPercent = (shortfall / product.minMonthlyTurnover) * 100;
-      
-      if (shortfallPercent <= 25) {
-        improvements.push(`Need R${(shortfall / 1000).toFixed(0)}k more monthly turnover`);
-        closeMatchCount++;
-      } else {
-        reasons.push(`Min turnover R${(product.minMonthlyTurnover / 1000).toFixed(0)}k/mo, you have R${(profile.monthlyTurnover / 1000).toFixed(0)}k/mo`);
-      }
+    // Monthly Turnover (hard requirement - cannot be changed quickly)  
+    if (hasBasics && profile.monthlyTurnover !== undefined && profile.monthlyTurnover < product.minMonthlyTurnover) {
+      // Turnover is HARD - you can't just "increase" your turnover
+      reasons.push(`Min turnover R${formatAmount(product.minMonthlyTurnover)}/mo, you have R${formatAmount(profile.monthlyTurnover)}/mo`);
     }
 
-    // Check VAT registration
-    if (product.vatRequired && profile.vatRegistered === false) {
+    // Check VAT registration (only if we have basics)
+    if (hasBasics && product.vatRequired && profile.vatRegistered === false) {
       improvements.push('Need VAT registration');
       closeMatchCount++;
-    } else if (product.vatRequired && profile.vatRegistered === undefined) {
+    } else if (hasBasics && product.vatRequired && profile.vatRegistered === undefined) {
       missingRequirements.push('VAT registration status needed');
     }
 
-    // Check amount range
-    if (profile.amountRequested === undefined) {
-      missingRequirements.push(`Loans from R${(product.amountMin / 1000).toFixed(0)}k to R${(product.amountMax / 1000).toFixed(0)}k`);
-    } else {
+    // FLEX REQUIREMENTS - Can be adjusted (only if we have basics)
+    
+    // Amount Range (flex - user can adjust their request)
+    if (hasBasics && profile.amountRequested !== undefined) {
       if (profile.amountRequested < product.amountMin) {
         const shortfall = product.amountMin - profile.amountRequested;
         const shortfallPercent = (shortfall / product.amountMin) * 100;
         
         if (shortfallPercent <= 20) {
-          improvements.push(`Consider requesting at least R${(product.amountMin / 1000).toFixed(0)}k`);
+          improvements.push(`Consider requesting at least R${formatAmount(product.amountMin)}`);
           closeMatchCount++;
         } else {
-          reasons.push(`Min amount R${(product.amountMin / 1000).toFixed(0)}k, you requested R${(profile.amountRequested / 1000).toFixed(0)}k`);
+          reasons.push(`Min amount R${formatAmount(product.amountMin)}, you requested R${formatAmount(profile.amountRequested)}`);
         }
       } else if (profile.amountRequested > product.amountMax) {
         const excess = profile.amountRequested - product.amountMax;
         const excessPercent = (excess / product.amountMax) * 100;
         
         if (excessPercent <= 20) {
-          improvements.push(`Consider reducing to max R${(product.amountMax / 1000).toFixed(0)}k`);
+          improvements.push(`Consider reducing to max R${formatAmount(product.amountMax)}`);
           closeMatchCount++;
         } else {
-          reasons.push(`Max amount R${(product.amountMax / 1000).toFixed(0)}k, you requested R${(profile.amountRequested / 1000).toFixed(0)}k`);
+          reasons.push(`Max amount R${formatAmount(product.amountMax)}, you requested R${formatAmount(profile.amountRequested)}`);
         }
       }
     }
 
-    // Hard exclusions (never close matches)
-    if (product.sectorExclusions && profile.industry && product.sectorExclusions.includes(profile.industry)) {
+    // Hard exclusions (only if we have basics and the relevant info)
+    if (hasBasics && product.sectorExclusions && profile.industry && product.sectorExclusions.includes(profile.industry)) {
       reasons.push(`${profile.industry} sector excluded`);
     }
 
-    if (product.provincesAllowed && profile.province && !product.provincesAllowed.includes(profile.province)) {
+    if (hasBasics && product.provincesAllowed && profile.province && !product.provincesAllowed.includes(profile.province)) {
       reasons.push(`Not available in ${profile.province}`);
     }
 
-    // Check collateral requirements
-    if (product.collateralRequired && profile.collateralAcceptable === false) {
+    // Check collateral requirements (only if we have basics)
+    if (hasBasics && product.collateralRequired && profile.collateralAcceptable === false) {
       reasons.push('Collateral required, but you prefer no collateral');
-    } else if (product.collateralRequired && profile.collateralAcceptable === undefined) {
+    } else if (hasBasics && product.collateralRequired && profile.collateralAcceptable === undefined) {
       improvements.push('Collateral required - confirm if acceptable');
       closeMatchCount++;
     }

@@ -19,6 +19,7 @@ import { getLendersFromDB } from '@/lib/db-lenders';
 import { useUserTracking } from '@/hooks/useUserTracking';
 import { ConversationTracker } from '@/lib/db-conversations';
 import { FrankAI, GPTResponse } from '@/lib/openai-client';
+import { hasHardRequirements } from '@/lib/flow';
 
 export default function Home() {
   const { userId, sessionId, trackEvent, trackApplication } = useUserTracking();
@@ -69,19 +70,11 @@ export default function Home() {
       sessionId
     });
     
-    // Check if we have enough information to show the matches panel
-    const keyFields = [
-      updatedProfile.industry, 
-      updatedProfile.yearsTrading, 
-      updatedProfile.monthlyTurnover, 
-      updatedProfile.amountRequested
-    ];
-    const filledFields = keyFields.filter(field => field !== undefined && field !== null && field !== '').length;
-    
-    // Show panel if we have 3 or 4 key fields
-    if (filledFields >= 3) {
+    // Show matches panel only when all hard requirements are present
+    const hasAllHard = hasHardRequirements(updatedProfile);
+    if (hasAllHard) {
       setHasUserInput(true);
-      trackEvent('matches_panel_opened', { filledFields });
+      trackEvent('matches_panel_opened', { hasAllHard: true });
     }
   }, [profile, trackEvent, mode, userId, sessionId]);
 
@@ -90,7 +83,7 @@ export default function Home() {
       const rationale = await FrankAI.getProductRationale(product, profile);
       return rationale;
     } catch {
-      return 'Well-suited for your business needs';
+      return 'Fast approval with competitive terms';
     }
   }, []);
 
@@ -123,18 +116,10 @@ export default function Home() {
             ...savedProfile
           }));
           
-          // Check if we should show matches based on saved profile
-          const keyFields = [
-            savedProfile.industry, 
-            savedProfile.yearsTrading, 
-            savedProfile.monthlyTurnover, 
-            savedProfile.amountRequested
-          ];
-          const filledFields = keyFields.filter(field => field !== undefined && field !== null && field !== '').length;
-          
-          if (filledFields >= 3) {
+          // Show matches only when all hard requirements are present
+          if (hasHardRequirements(savedProfile)) {
             setHasUserInput(true);
-            // Also unblur the panel since user clearly had a previous conversation
+            // Unblur panel since user clearly had a previous conversation and all hard fields
             setHasFirstResponse(true);
             setShowMatchesPanel(true);
           }
@@ -185,7 +170,7 @@ export default function Home() {
         }
         
         // Temporarily disable GPT rationale calls to prevent excessive API usage
-        let gptReason = 'Good fit for your business needs';
+        let gptReason = 'Fast approval with competitive terms';
         // if (hasProfileData) {
         //   gptReason = await fetchProductReasons(product, profile);
         // }
@@ -204,100 +189,97 @@ export default function Home() {
   }, [profile, fetchProductReasons, products, loadingProducts]);
 
   const handleChatMessage = async (
-    message: string, 
-    chatHistory?: Array<{role: 'system' | 'user' | 'assistant', content: string}>, 
+    message: string,
+    chatHistory?: Array<{role: 'system' | 'user' | 'assistant', content: string}>,
     personality?: string
   ): Promise<string> => {
     try {
       console.log('💬 USER MESSAGE:', message);
       setIsProcessing(true);
-      
-      // STEP 1: Extract data only (no response generation yet)
-      const extractionResult = await FrankAI.chat(message, chatHistory || [], profile, products, undefined) as GPTResponse;
-      console.log('🔍 EXTRACTION RESULT:', extractionResult.extracted);
-      
-      let updatedProfile = profile;
+
+      // Use non-streaming API endpoint
+      const response = await fetch('/api/chat-tools', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          message,
+          chatHistory: chatHistory || [],
+          userId,
+          sessionId
+        })
+      });
+
+      if (!response.ok) {
+        throw new Error('Failed to get AI response');
+      }
+
+      const data = await response.json();
+      const fullResponse = data.summary || '';
+      const toolCallsMade = data.toolCallsMade || 0;
+
+      console.log('🔧 TOOL CALLS MADE:', toolCallsMade);
+      console.log('💬 AI RESPONSE:', fullResponse);
+
+      // Fetch the updated profile from the database (tools updated it)
+      const updatedProfile = await ConversationTracker.getUserBusinessProfile() || {};
+      console.log('📊 UPDATED PROFILE FROM DB:', updatedProfile);
+
       let currentMatches = matches;
-      
-      // STEP 2: If we extracted new data, update profile and side panel
-      if (extractionResult.extracted && Object.keys(extractionResult.extracted).length > 0) {
-        updatedProfile = { ...profile, ...extractionResult.extracted };
-        
-        // Calculate fresh matches with updated profile
-        currentMatches = filterProducts(updatedProfile, products);
-        console.log('🎯 UPDATED MATCHES AFTER EXTRACTION:', {
+
+      // Recalculate matches if profile changed
+      if (Object.keys(updatedProfile).length > 0) {
+        currentMatches = filterProducts(updatedProfile as Profile, products);
+        console.log('🎯 MATCHES AFTER TOOL EXECUTION:', {
           qualified: currentMatches.qualified.length,
           needMoreInfo: currentMatches.needMoreInfo.length,
           notQualified: currentMatches.notQualified.length
         });
-        
-        // Update UI state immediately
-        setProfile(updatedProfile);
+
+        // Update UI state
+        setProfile(updatedProfile as Profile);
         setMatches(currentMatches);
-        
-        // Wait a bit for state updates to propagate
-        await new Promise(resolve => setTimeout(resolve, 100));
       }
-      
-      // STEP 3: Now generate response with latest data and full lender details
-      const responseResult = await FrankAI.chat(message, chatHistory || [], updatedProfile, products, currentMatches) as GPTResponse;
-      console.log('🤖 AI RESPONSE:', responseResult.summary);
-      
+
       // Log extraction progress
-      const finalProfile = updatedProfile;
-      const requiredFields = ['industry', 'yearsTrading', 'monthlyTurnover', 'amountRequested'];
-      const optionalFields = ['vatRegistered', 'collateralAcceptable', 'province', 'useOfFunds', 'urgencyDays'];
-      
+      const finalProfile = updatedProfile as Profile;
+      const requiredFields = ['industry', 'yearsTrading', 'monthlyTurnover', 'amountRequested', 'saRegistered', 'saDirector', 'bankStatements', 'province', 'vatRegistered'];
+      const optionalFields = ['collateralAcceptable', 'useOfFunds', 'urgencyDays'];
+
       const extractedRequired = requiredFields.filter(field => finalProfile[field as keyof typeof finalProfile] !== undefined);
       const missingRequired = requiredFields.filter(field => finalProfile[field as keyof typeof finalProfile] === undefined);
       const extractedOptional = optionalFields.filter(field => finalProfile[field as keyof typeof finalProfile] !== undefined);
       const missingOptional = optionalFields.filter(field => finalProfile[field as keyof typeof finalProfile] === undefined);
-      
+
       console.log('📊 EXTRACTION PROGRESS:', {
         required: `${extractedRequired.length}/${requiredFields.length} - Have: [${extractedRequired.join(', ')}] - Missing: [${missingRequired.join(', ')}]`,
         optional: `${extractedOptional.length}/${optionalFields.length} - Have: [${extractedOptional.join(', ')}] - Missing: [${missingOptional.join(', ')}]`,
         currentProfile: finalProfile
       });
-      
-      if (extractionResult.extracted && Object.keys(extractionResult.extracted).length > 0) {        
-        // Check if we now have enough information after this update
-        const keyFields = [
-          finalProfile.industry, 
-          finalProfile.yearsTrading, 
-          finalProfile.monthlyTurnover, 
-          finalProfile.amountRequested
-        ];
-        const filledFields = keyFields.filter(field => field !== undefined && field !== null && field !== '').length;
-        
-        // First, check if we should unblur the panel (before any early returns)
-        if (!hasFirstResponse && extractionResult.extracted && Object.keys(extractionResult.extracted).length > 0) {
+
+      // Show matches panel if we extracted data
+      if (Object.keys(finalProfile).length > 0) {
+        if (!hasFirstResponse) {
           setHasFirstResponse(true);
           setShowMatchesPanel(true);
         }
 
-        if (filledFields >= 3) {
-          // Check if this is the first time we have enough info
-          const previousFields = [profile.industry, profile.yearsTrading, profile.monthlyTurnover, profile.amountRequested];
-          const previousFilledCount = previousFields.filter(field => field !== undefined && field !== null && field !== '').length;
-          
-          if (!hasUserInput || previousFilledCount < 3) {
-            // Add a slight delay for smooth animation
+        if (hasHardRequirements(finalProfile)) {
+          const previousHadAllHard = hasHardRequirements(profile);
+
+          if (!hasUserInput || !previousHadAllHard) {
             setTimeout(() => {
               setHasUserInput(true);
             }, 100);
-            
-            // Use the OpenAI response since it's more detailed and relevant
+
             setIsProcessing(false);
-            const finalResponse = responseResult.summary || 'Got it — I\'ll tune your matches based on your needs';
-            return finalResponse;
+            return fullResponse || 'Got it — I\'ll tune your matches based on your needs';
           }
         }
       }
       
       setIsProcessing(false);
-      
-      const finalResponse = responseResult.summary || 'Got it — I\'ll tune your matches based on your needs';
-      return finalResponse;
+
+      return fullResponse || 'Got it — I\'ll tune your matches based on your needs';
     } catch (error) {
       console.error('❌ CHAT ERROR:', error);
       setIsProcessing(false);
@@ -738,7 +720,7 @@ export default function Home() {
                                 product={product}
                                 reasons={matchReasons[product.id] || [
                                   'Meets basic requirements',
-                                  'Good fit for your profile',
+                                  'Fast approval with competitive terms',
                                   'Fast approval process'
                                 ]}
                                 onApply={() => handleApply(product)}
@@ -859,7 +841,7 @@ export default function Home() {
                               product={product}
                               reasons={matchReasons[product.id] || [
                                 'Meets basic requirements',
-                                'Good fit for your profile',
+                                'Fast approval with competitive terms',
                                 'Fast approval process'
                               ]}
                               onApply={() => handleApply(product)}

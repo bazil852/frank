@@ -266,11 +266,16 @@ export class ConversationTracker {
 
   /**
    * Update user's business profile in the database
+   * @param profileData - The profile data to update
+   * @param userIdOverride - Optional userId (for server-side calls where localStorage isn't available)
    */
-  static async updateUserBusinessProfile(profileData: any) {
-    const userId = AnonymousUserTracker.getUserId();
-    
-    if (!userId) return;
+  static async updateUserBusinessProfile(profileData: any, userIdOverride?: string) {
+    const userId = userIdOverride || AnonymousUserTracker.getUserId();
+
+    if (!userId) {
+      console.error('⚠️  No userId available for updateUserBusinessProfile');
+      return;
+    }
 
     try {
       // Use the database function to merge profile data
@@ -280,6 +285,7 @@ export class ConversationTracker {
       });
 
       if (error) throw error;
+      console.log(`✅ Profile updated in DB for user: ${userId}`);
     } catch (error) {
       console.error('Error updating user business profile:', error);
     }
@@ -287,11 +293,15 @@ export class ConversationTracker {
 
   /**
    * Get user's business profile from database
+   * @param userIdOverride - Optional userId (for server-side calls where localStorage isn't available)
    */
-  static async getUserBusinessProfile() {
-    const userId = AnonymousUserTracker.getUserId();
-    
-    if (!userId) return {};
+  static async getUserBusinessProfile(userIdOverride?: string) {
+    const userId = userIdOverride || AnonymousUserTracker.getUserId();
+
+    if (!userId) {
+      console.error('⚠️  No userId available for getUserBusinessProfile');
+      return {};
+    }
 
     try {
       const { data, error } = await supabase.rpc('get_user_business_profile', {
@@ -299,6 +309,7 @@ export class ConversationTracker {
       });
 
       if (error) throw error;
+      console.log(`✅ Profile fetched from DB for user: ${userId}`, data);
       return data || {};
     } catch (error) {
       console.error('Error getting user business profile:', error);

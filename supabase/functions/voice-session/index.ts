@@ -33,7 +33,7 @@ serve(async (req) => {
 
     // Parse request body for optional configuration
     const body = await req.json()
-    const { instructions = "", model = "gpt-4o-realtime-preview-2024-10-01" } = body
+    const { instructions = "", model = "gpt-5-realtime-preview-2024-10-01" } = body
 
     // Default instructions for Frank
     const frankInstructions = instructions || `You are Frank, an AI-powered SME funding assistant that helps South African businesses find suitable financing providers.

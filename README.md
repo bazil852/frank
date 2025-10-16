@@ -1,6 +1,6 @@
 # Frank MVP - Business Financing Matcher
 
-**Frank**: AI-powered SME funding assistant that matches South African businesses with the right financing providers using smart filtering and GPT-4o.
+**Frank**: AI-powered SME funding assistant that matches South African businesses with the right financing providers using smart filtering and gpt-5.
 
 ## Features
 
@@ -32,7 +32,7 @@ Open [http://localhost:3001](http://localhost:3001)
 - **Styling**: Tailwind CSS
 - **Animations**: Framer Motion
 - **Icons**: Lucide React
-- **LLM**: OpenAI GPT-4o
+- **LLM**: OpenAI gpt-5
 
 ## Project Structure
 
@@ -52,7 +52,7 @@ public/logos/          # Provider logo SVGs
 ## How Frank Works
 
 1. **Chat or Form**: Users describe their business needs via chat or structured form
-2. **Smart Extraction**: GPT-4o extracts business details (industry, amount, turnover, etc.)
+2. **Smart Extraction**: gpt-5 extracts business details (industry, amount, turnover, etc.)
 3. **Rule-Based Filtering**: Algorithm matches against lender requirements
 4. **AI Rationales**: GPT generates personalized reasons why each lender fits
 5. **Apply Flow**: Complete application with contact details and success tracking

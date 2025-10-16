@@ -15,6 +15,8 @@ export type Product = {
   interestRate?: [number, number]; // [min, max] annual percentage rates
   notes?: string;
   repaymentStyle?: string; // e.g., "Weekly debit", "% of sales", "Monthly installment"
+  saDirectorRequired?: boolean; // New: SA director requirement
+  repaymentDescription?: string; // New: Detailed repayment explanation
 };
 
 export const PRODUCT_TYPE_EXPLAINERS = {
@@ -22,37 +24,43 @@ export const PRODUCT_TYPE_EXPLAINERS = {
     repaymentStyle: 'Fixed weekly/monthly debit',
     bestFor: 'Predictable, steady revenue businesses',
     watchOutFor: 'Same repayment even during slow months',
-    analogy: 'Like a gym membership — same amount every period'
+    analogy: 'Like a gym membership — same amount every period',
+    defaultRepaymentDesc: 'Fixed weekly or monthly debit orders from your bank account'
   },
   'Merchant Cash Advance': {
     repaymentStyle: '% of card sales',
     bestFor: 'Seasonal/fluctuating revenue',
     watchOutFor: 'Can cost more if sales spike',
-    analogy: 'Like a bar tab — repay as you sell'
+    analogy: 'Like a bar tab — repay as you sell',
+    defaultRepaymentDesc: 'Percentage of daily card sales automatically collected until paid off'
   },
   'Revenue-Based Finance': {
     repaymentStyle: '% of monthly turnover',
     bestFor: 'High-growth, recurring revenue',
     watchOutFor: 'Term can extend if revenue drops',
-    analogy: 'They take a cut of your monthly turnover'
+    analogy: 'They take a cut of your monthly turnover',
+    defaultRepaymentDesc: 'Fixed percentage of monthly revenue until target multiple reached'
   },
   'Invoice Discounting': {
     repaymentStyle: 'Sell invoice, get % upfront',
     bestFor: 'Long debtor cycles (30-90 days)',
     watchOutFor: 'Fees per invoice, client payment risk',
-    analogy: 'Basically selling your invoice to get paid early'
+    analogy: 'Basically selling your invoice to get paid early',
+    defaultRepaymentDesc: 'Advance against invoices, automatically repaid when customers pay'
   },
   'Term Loan': {
     repaymentStyle: 'Monthly installment',
     bestFor: 'Quick cash gaps, expansion',
     watchOutFor: 'Higher rates than banks',
-    analogy: 'Traditional loan with fixed monthly payments'
+    analogy: 'Traditional loan with fixed monthly payments',
+    defaultRepaymentDesc: 'Fixed monthly installments over agreed loan term'
   },
   'Asset Finance': {
     repaymentStyle: 'Fixed monthly repayment',
     bestFor: 'Equipment or vehicle needs',
     watchOutFor: 'Asset is security — you lose it if you default',
-    analogy: 'Buy now, pay later for business equipment'
+    analogy: 'Buy now, pay later for business equipment',
+    defaultRepaymentDesc: 'Fixed monthly payments secured against the financed asset'
   }
 };
 

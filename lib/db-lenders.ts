@@ -75,6 +75,8 @@ export async function addLender(lender: Omit<Product, 'id'>): Promise<Product | 
     speedDays: [data.speed_days_min, data.speed_days_max] as [number, number],
     collateralRequired: data.collateral_required || undefined,
     notes: data.notes || undefined,
+    saDirectorRequired: data.sa_director_required || false,
+    repaymentDescription: data.repayment_description || undefined,
   };
 }
 
@@ -97,6 +99,8 @@ export async function updateLender(id: string, updates: Partial<Product>): Promi
   }
   if (updates.collateralRequired !== undefined) updateData.collateral_required = updates.collateralRequired || null;
   if (updates.notes !== undefined) updateData.notes = updates.notes || null;
+  if (updates.saDirectorRequired !== undefined) updateData.sa_director_required = updates.saDirectorRequired;
+  if (updates.repaymentDescription !== undefined) updateData.repayment_description = updates.repaymentDescription || null;
 
   const { data, error } = await supabase
     .from('lenders')
@@ -125,6 +129,8 @@ export async function updateLender(id: string, updates: Partial<Product>): Promi
     speedDays: [data.speed_days_min, data.speed_days_max] as [number, number],
     collateralRequired: data.collateral_required || undefined,
     notes: data.notes || undefined,
+    saDirectorRequired: data.sa_director_required || false,
+    repaymentDescription: data.repayment_description || undefined,
   };
 }
 

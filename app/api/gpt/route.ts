@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import OpenAI from 'openai';
 import { Profile } from '@/lib/filters';
+import { ExtractSchema } from '@/lib/ai-schemas';
 
 const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY || '',
@@ -17,7 +18,7 @@ export async function POST(request: NextRequest) {
     if (!process.env.OPENAI_API_KEY) {
       console.log('❌ NO OPENAI API KEY FOUND - USING FALLBACK');
       return NextResponse.json({
-        rationale: productNotes ? 'Good fit for your business profile' : undefined,
+        rationale: productNotes ? 'Fast approval with competitive terms' : undefined,
         summary: message ? 'Thanks for the information! Let me process that for you.' : undefined,
         extracted: parseExtracted({}, message || '')
       });
@@ -137,40 +138,49 @@ For a greeting like "hey" with no business info, respond like:
     const messages = [
       { role: 'system', content: systemPrompt },
       ...validChatHistory,
-      { role: 'user', content: message || '' }
-    ].filter(msg => msg.content && msg.content.trim() !== '');
+      { role: 'user', content: (prompt || message || '').toString() }
+    ].filter(msg => (msg as any).content && (msg as any).content.trim() !== '');
     
-    const completion = await openai.chat.completions.create({
+    const response = await openai.responses.create({
       model: 'gpt-5',
-      messages,
-      temperature: 0.1, // Very low temperature for strict JSON formatting
-      max_tokens: 400,
-      response_format: { type: "json_object" }, // Force JSON response
+      reasoning: { effort: "low" },
+      instructions: systemPrompt + personalityPrompt,
+      input: (prompt || message || '').toString(),
+      text: {
+        format: {
+          type: "json_schema",
+          name: ExtractSchema.name,
+          schema: ExtractSchema.schema,
+          strict: false
+        }
+      },
+      max_output_tokens: 400,
+      store: false
     });
 
-    const response = completion.choices[0]?.message?.content || '';
-    
+    const responseText = response.output_text || '';
+
     console.log('✅ OpenAI API call successful');
-    console.log('📝 Raw OpenAI response:', response);
-    console.log('📝 Response length:', response.length);
-    console.log('📝 First 100 chars:', response.substring(0, 100));
+    console.log('📝 Raw OpenAI response:', responseText);
+    console.log('📝 Response length:', responseText.length);
+    console.log('📝 First 100 chars:', responseText.substring(0, 100));
 
     if (productNotes) {
-      return NextResponse.json({ rationale: response });
+      return NextResponse.json({ rationale: responseText });
     } else if (message) {
       try {
         // Clean response of any markdown formatting
-        let cleanResponse = response.trim();
+        let cleanResponse = responseText.trim();
         if (cleanResponse.startsWith('```json') && cleanResponse.endsWith('```')) {
           cleanResponse = cleanResponse.slice(7, -3).trim();
         } else if (cleanResponse.startsWith('```') && cleanResponse.endsWith('```')) {
           cleanResponse = cleanResponse.slice(3, -3).trim();
         }
-        
+
         // If response doesn't look like JSON, try to extract from fallback
         if (!cleanResponse.startsWith('{')) {
           console.warn('Response is not JSON format, using fallback extraction');
-          console.warn('Raw response was:', response);
+          console.warn('Raw response was:', responseText);
           console.warn('Cleaned response was:', cleanResponse);
           const extractedData = parseExtracted({}, message);
           return NextResponse.json({
@@ -178,7 +188,7 @@ For a greeting like "hey" with no business info, respond like:
             extracted: extractedData
           });
         }
-        
+
         const parsed = JSON.parse(cleanResponse);
         const extractedData = parseExtracted(parsed.extracted || {}, message);
         console.log('Extracted data being returned:', extractedData);
@@ -188,7 +198,7 @@ For a greeting like "hey" with no business info, respond like:
         });
       } catch (error) {
         console.error('Failed to parse GPT response:', error);
-        console.error('Response was:', response);
+        console.error('Response was:', responseText);
         
         // Fallback extraction from the message directly
         const extractedData = parseExtracted({}, message);
@@ -203,7 +213,7 @@ For a greeting like "hey" with no business info, respond like:
   } catch (error) {
     console.error('GPT API error:', error);
     return NextResponse.json({
-      rationale: 'Good fit for your business profile',
+      rationale: 'Fast approval with competitive terms',
       summary: 'Got it — I\'ll tune your matches based on your needs',
       extracted: {}
     });
@@ -213,20 +223,7 @@ For a greeting like "hey" with no business info, respond like:
 function parseExtracted(extracted: any, message: string): Partial<Profile> {
   const result: Partial<Profile> = {};
   
-  // Test override: if we have specific robotics info mentioned previously, use it
   const messageLower = message.toLowerCase();
-  if (messageLower.includes('robotics') || messageLower.includes('5 years') || messageLower.includes('western cape')) {
-    console.log('Detected robotics business context, applying known values');
-    result.industry = 'Robotics';
-    result.yearsTrading = 5;
-    result.monthlyTurnover = 50000;
-    result.amountRequested = 100000;
-    result.vatRegistered = true;
-    result.province = 'Western Cape';
-    result.urgencyDays = 1; // asap = 1 day
-    result.useOfFunds = 'To scale your business';
-    return result;
-  }
   
   // Special case: if the message contains detailed business summary, extract from it
   if (messageLower.includes('industry:') || messageLower.includes('years in business:') || messageLower.includes('monthly turnover:')) {
@@ -362,8 +359,16 @@ function parseExtracted(extracted: any, message: string): Partial<Profile> {
     }
   }
 
-  if (!result.vatRegistered && message.toLowerCase().includes('vat')) {
-    result.vatRegistered = true;
+  // VAT detection with negative phrase handling
+  if (result.vatRegistered === undefined) {
+    const lower = message.toLowerCase();
+    const negVat = /(not\s+(yet\s+)?vat[-\s]?registered|no\s+vat\b|not\s+registered\s+for\s+vat|without\s+vat|non-?vat)/i;
+    const posVat = /(\bvat[-\s]?registered\b|registered\s+for\s+vat|vat\s+reg(istration)?\b|vat\s+number)/i;
+    if (negVat.test(lower)) {
+      result.vatRegistered = false;
+    } else if (posVat.test(lower)) {
+      result.vatRegistered = true;
+    }
   }
 
   if (!result.yearsTrading) {

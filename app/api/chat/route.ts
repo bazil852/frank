@@ -25,29 +25,36 @@ export async function POST(request: NextRequest) {
 IMPORTANT: Return ONLY valid JSON without markdown formatting or code blocks. Example:
 {"summary": "Got it, looking for R500k for your retail business.", "extracted": {"industry": "Retail", "amountRequested": 500000}}`;
 
-    const completion = await openai.chat.completions.create({
-      model: 'gpt-4o',
-      messages: [
-        { role: 'system', content: 'You are Frank — short, helpful, SA context, no fluff. Return only valid JSON.' },
-        { role: 'user', content: prompt }
-      ],
-      temperature: 0.7,
-      max_tokens: 150,
+    const completion = await openai.responses.create({
+      model: 'gpt-5',
+      reasoning: { effort: "low" },
+      instructions: 'You are Frank — short, helpful, SA context, no fluff. Return only valid JSON.',
+      input: prompt,
+      max_output_tokens: 150,
       stream: true,
+      store: false
     });
 
     const encoder = new TextEncoder();
     let fullResponse = '';
-    
+
     const stream = new ReadableStream({
       async start(controller) {
         try {
-          for await (const chunk of completion) {
-            const content = chunk.choices[0]?.delta?.content || '';
-            fullResponse += content;
-            
-            if (content) {
-              controller.enqueue(encoder.encode(`data: ${JSON.stringify({ content })}\n\n`));
+          for await (const event of completion) {
+            // Responses API streaming format is different
+            if (event.type === 'response.output_item.added') {
+              // Skip initial item added events
+              continue;
+            }
+
+            if (event.type === 'response.output_text.delta') {
+              const content = event.delta || '';
+              fullResponse += content;
+
+              if (content) {
+                controller.enqueue(encoder.encode(`data: ${JSON.stringify({ content })}\n\n`));
+              }
             }
           }
           
@@ -106,39 +113,102 @@ IMPORTANT: Return ONLY valid JSON without markdown formatting or code blocks. Ex
 
 function parseExtracted(extracted: any, message: string): Partial<Profile> {
   const result: Partial<Profile> = { ...extracted };
-  
-  const amountMatch = message.match(/R?\s*(\d+)k|\b(\d{4,})\b/i);
-  if (amountMatch) {
-    const amount = amountMatch[1] ? parseInt(amountMatch[1]) * 1000 : parseInt(amountMatch[2]);
-    if (amount > 10000 && amount < 100000000) {
-      if (message.toLowerCase().includes('need') || message.toLowerCase().includes('loan') || message.toLowerCase().includes('finance')) {
-        result.amountRequested = amount;
-      } else if (message.toLowerCase().includes('turnover') || message.toLowerCase().includes('revenue')) {
-        result.monthlyTurnover = amount;
-      }
+  const lower = message.toLowerCase();
+
+  // Amount parsing: support 1.2m, 300k, 500000, with context-based assignment
+  const amountRegex = /r?\s*(\d+(?:[.,]\d+)?|\d{1,3}(?:[.,]\d{3})*)\s*([km])?/gi;
+  const matches = Array.from(message.matchAll(amountRegex));
+  let computedTurnover: number | null = null;
+  let computedNeed: number | null = null;
+  for (const m of matches) {
+    const raw = (m[1] || '').replace(/,/g, '');
+    const suffix = (m[2] || '').toLowerCase();
+    let num = parseFloat(raw);
+    if (isNaN(num)) continue;
+    if (suffix === 'k') num *= 1_000;
+    if (suffix === 'm') num *= 1_000_000;
+    const amount = Math.round(num);
+    if (amount <= 1000 || amount >= 100_000_000) continue;
+
+    const idx = m.index ?? 0;
+    const lookback = 30;
+    const before = lower.slice(Math.max(0, idx - lookback), idx);
+    const after = lower.slice(idx, Math.min(lower.length, idx + 30));
+    const lastTurnoverIdx = before.lastIndexOf('turnover');
+    const lastRevenueIdx = before.lastIndexOf('revenue');
+    const lastMonthlyIdx = before.lastIndexOf('monthly');
+    const lastPerMonthIdx = before.lastIndexOf('per month');
+    const lastNeedIdx = before.lastIndexOf('need');
+    const lastLoanIdx = before.lastIndexOf('loan');
+    const lastFundIdx = before.lastIndexOf('fund');
+    const lastFundingIdx = before.lastIndexOf('funding');
+    const lastFinanceIdx = before.lastIndexOf('finance');
+    const lastBorrowIdx = before.lastIndexOf('borrow');
+    const lastApplyIdx = before.lastIndexOf('apply');
+
+    const turnoverCue = Math.max(lastTurnoverIdx, lastRevenueIdx, lastMonthlyIdx, lastPerMonthIdx);
+    const needCue = Math.max(lastNeedIdx, lastLoanIdx, lastFundIdx, lastFundingIdx, lastFinanceIdx, lastBorrowIdx, lastApplyIdx);
+
+    // Determine classification by nearest preceding cue; if both present, prefer 'need'
+    if (needCue >= 0 && (turnoverCue < 0 || needCue >= turnoverCue)) {
+      computedNeed = amount;
+    } else if (turnoverCue >= 0) {
+      computedTurnover = amount;
+    } else {
+      // Fallback: use after-context hints
+      const isTurnoverAfter = /turnover|revenue|monthly|per\s*month/.test(after);
+      const isNeedAfter = /need|loan|fund|funding|finance|borrow|apply/.test(after);
+      if (isNeedAfter) computedNeed = amount;
+      else if (isTurnoverAfter) computedTurnover = amount;
     }
   }
 
+  // Override with computed values if present (prefer explicit user numbers)
+  if (computedTurnover !== null) {
+    result.monthlyTurnover = computedTurnover;
+  }
+  if (computedNeed !== null) {
+    result.amountRequested = computedNeed;
+  }
+
+  // Urgency: numeric days or ASAP
   const daysMatch = message.match(/(\d+)\s*days?/i);
   if (daysMatch) {
     result.urgencyDays = parseInt(daysMatch[1]);
+  } else if (/\basap\b|as soon as possible/i.test(message)) {
+    result.urgencyDays = 3;
   }
 
-  if (message.toLowerCase().includes('vat')) {
-    result.vatRegistered = true;
+  // VAT detection with negative phrase handling
+  if (result.vatRegistered === undefined) {
+    const negVat = /(not\s+(yet\s+)?vat[-\s]?registered|no\s+vat\b|not\s+registered\s+for\s+vat|without\s+vat|non-?vat)/i;
+    const posVat = /(\bvat[-\s]?registered\b|registered\s+for\s+vat|vat\s+reg(istration)?\b|vat\s+number)/i;
+    if (negVat.test(lower)) result.vatRegistered = false;
+    else if (posVat.test(lower)) result.vatRegistered = true;
   }
 
-  const industries = ['Retail', 'Services', 'Manufacturing', 'Hospitality', 'Logistics'];
-  industries.forEach(industry => {
-    if (message.toLowerCase().includes(industry.toLowerCase())) {
+  // Industry detection
+  const industries = ['Retail', 'Services', 'Manufacturing', 'Hospitality', 'Logistics', 'Construction', 'Technology', 'Healthcare'];
+  for (const industry of industries) {
+    if (lower.includes(industry.toLowerCase())) {
       result.industry = industry;
+      break;
     }
-  });
-
-  const yearsMatch = message.match(/(\d+)\s*years?/i);
-  if (yearsMatch) {
-    result.yearsTrading = parseInt(yearsMatch[1]);
   }
+
+  // Province detection
+  const provinces = ['Gauteng','Western Cape','KwaZulu-Natal','KZN','Eastern Cape','Free State','North West','Limpopo','Mpumalanga','Northern Cape'];
+  for (const p of provinces) {
+    const re = new RegExp(`\\b${p.replace(/[-]/g, '[- ]')}\\b`, 'i');
+    if (re.test(message)) {
+      result.province = p === 'KZN' ? 'KZN' : p;
+      break;
+    }
+  }
+
+  // Years trading
+  const yearsMatch = message.match(/(\d+)\s*years?/i);
+  if (yearsMatch) result.yearsTrading = parseInt(yearsMatch[1]);
 
   return result;
 }

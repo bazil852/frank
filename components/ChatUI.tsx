@@ -5,18 +5,8 @@ import { useState, useRef, useEffect, useLayoutEffect, forwardRef, useImperative
 import { Send } from 'lucide-react';
 import { ConversationTracker } from '@/lib/db-conversations';
 import ChipsBar from './ChipsBar';
-
-function formatMessage(content: string): string {
-  return content
-    // Convert **bold** to <strong>
-    .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
-    // Convert numbered lists
-    .replace(/^(\d+)\.\s+\*\*(.*?)\*\*:\s*(.*?)$/gm, '<div class="mb-2"><strong>$1. $2:</strong> $3</div>')
-    // Convert bullet points
-    .replace(/^-\s+(.*?)$/gm, '<div class="ml-4">• $1</div>')
-    // Convert line breaks
-    .replace(/\n/g, '<br />');
-}
+import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
 
 interface Message {
   id: string;
@@ -296,17 +286,45 @@ const ChatUI = forwardRef<ChatUIRef, ChatUIProps>(({
                   className={`${
                     message.type === 'user'
                       ? 'px-5 py-3 rounded-2xl bg-slate-800 text-white shadow-md'
-                      : 'text-slate-800'
+                      : 'px-5 py-4 rounded-2xl bg-white border border-slate-200 shadow-sm'
                   }`}
                 >
-                  <div 
-                    className={`whitespace-pre-wrap leading-relaxed ${
-                      message.type === 'user' ? 'text-white' : 'text-slate-700'
+                  <div
+                    className={`prose prose-sm max-w-none ${
+                      message.type === 'user'
+                        ? 'prose-invert text-white'
+                        : 'prose-slate'
                     }`}
-                    dangerouslySetInnerHTML={{
-                      __html: formatMessage(message.content)
-                    }}
-                  />
+                  >
+                    {message.type === 'user' ? (
+                      <p className="m-0 leading-relaxed">{message.content}</p>
+                    ) : (
+                      <ReactMarkdown
+                        remarkPlugins={[remarkGfm]}
+                        components={{
+                          h1: ({node, ...props}) => <h1 className="text-2xl font-bold mb-3 mt-4 first:mt-0 text-slate-900" {...props} />,
+                          h2: ({node, ...props}) => <h2 className="text-xl font-bold mb-3 mt-4 first:mt-0 text-slate-900" {...props} />,
+                          h3: ({node, ...props}) => <h3 className="text-lg font-semibold mb-2 mt-3 first:mt-0 text-slate-800" {...props} />,
+                          h4: ({node, ...props}) => <h4 className="text-base font-semibold mb-2 mt-3 first:mt-0 text-slate-800" {...props} />,
+                          p: ({node, ...props}) => <p className="mb-3 last:mb-0 leading-relaxed text-slate-700" {...props} />,
+                          ul: ({node, ...props}) => <ul className="mb-3 ml-4 space-y-1.5 list-disc marker:text-brand-600" {...props} />,
+                          ol: ({node, ...props}) => <ol className="mb-3 ml-4 space-y-1.5 list-decimal marker:text-brand-600 marker:font-semibold" {...props} />,
+                          li: ({node, ...props}) => <li className="text-slate-700 leading-relaxed pl-1" {...props} />,
+                          strong: ({node, ...props}) => <strong className="font-semibold text-slate-900" {...props} />,
+                          em: ({node, ...props}) => <em className="italic text-slate-700" {...props} />,
+                          code: ({node, inline, ...props}: any) =>
+                            inline
+                              ? <code className="px-1.5 py-0.5 bg-slate-100 text-slate-800 rounded text-sm font-mono" {...props} />
+                              : <code className="block p-3 bg-slate-100 text-slate-800 rounded-lg text-sm font-mono overflow-x-auto my-2" {...props} />,
+                          blockquote: ({node, ...props}) => <blockquote className="border-l-4 border-brand-500 pl-4 py-2 my-3 italic text-slate-600 bg-slate-50 rounded-r" {...props} />,
+                          a: ({node, ...props}) => <a className="text-brand-600 hover:text-brand-700 underline font-medium" {...props} />,
+                          hr: ({node, ...props}) => <hr className="my-4 border-slate-200" {...props} />,
+                        }}
+                      >
+                        {message.content}
+                      </ReactMarkdown>
+                    )}
+                  </div>
                 </motion.div>
               </div>
             </motion.div>

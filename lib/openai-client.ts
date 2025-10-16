@@ -1,7 +1,10 @@
 import OpenAI from 'openai';
 import type { ChatCompletionMessageParam } from 'openai/resources/chat/completions';
-import { Profile, filterProducts } from './filters';
+import { Profile, filterProducts, pickSmallContext, computeLevers } from './filters';
 import { Product } from './catalog';
+import { ExtractSchema, getStyleHint, dedupeLines } from './ai-schemas';
+import { EDU } from './requirements';
+import { nextQuestionGroup, hasHardRequirements } from './flow';
 
 // Initialize OpenAI client for frontend use
 // Note: In production, you should use a proxy/edge function to hide the API key
@@ -32,137 +35,257 @@ export interface StreamEvent {
 
 export class FrankAI {
 
-  private static systemPrompt = `You are Frank — I help South African businesses find funding they actually qualify for. No BS, no dead ends.
+  private static getSystemPrompt(): string {
+    const styleHint = getStyleHint();
+    return `You are Frank — SA funding matcher. Be sharp, human, concrete.
+Use the 3-layer structure. Avoid repeated phrases. 120–180 words max.
 
-## 3-LAYER MESSAGE STRUCTURE (CRITICAL - USE EVERY TIME)
+Tone rules:
+- Crisp, confident, playful—never cringe.
+- Prefer specifics over hype.
+- Ask for at most 2 missing facts at a time.
 
-Every response MUST have these 3 layers separated by double line breaks for multi-bubble display:
+${styleHint}`;
+  }
 
-**Layer 1: React/Acknowledge (Sassy + Witty)**
-- React like a human friend, not a form
-- Keep it short, cheeky, sometimes sarcastic — but never mean
-- Examples: "R400k a month? Okay, I see you." / "Six months trading? Fresh, but lenders will still talk to you." / "Love a café glow-up. Bold move."
+  /**
+   * Extract business information using structured JSON schema
+   */
+  private static async extractBusinessInfo(message: string, currentProfile: Partial<Profile> = {}): Promise<Partial<Profile>> {
+    try {
+      // Build context about what we're still missing (ALL fields, not just Group 1)
+      const missingFields = [];
+      if (!currentProfile.industry) missingFields.push('industry');
+      if (!currentProfile.yearsTrading) missingFields.push('years trading');
+      if (!currentProfile.monthlyTurnover) missingFields.push('monthly turnover');
+      if (!currentProfile.amountRequested) missingFields.push('funding amount');
+      if (currentProfile.saRegistered === undefined) missingFields.push('SA business registration');
+      if (currentProfile.saDirector === undefined) missingFields.push('SA director');
+      if (currentProfile.bankStatements === undefined) missingFields.push('6+ months bank statements');
+      if (!currentProfile.province) missingFields.push('province');
+      if (currentProfile.vatRegistered === undefined) missingFields.push('VAT registration');
 
-**Layer 2: Context/Insight (Helpful + Clear)**  
-- Explain where they stand and why
-- Surface differentiators: speed, cost, repayment style
-- Show progress: "We just unlocked 4 more lenders with that answer."
-- For tables, format clearly with columns
+      const contextHint = missingFields.length > 0
+        ? `Currently missing: ${missingFields.join(', ')}. If user provides "yes/no" or unlabeled values, infer based on what's missing.`
+        : '';
 
-**Layer 3: Next Steps (Always offer 2-3 options)**
-- Give clear, actionable choices so user feels in control
-- Can use bullets for multiple options:
-  • "See your 6 ready-to-go offers"
-  • "Unlock the 5 maybes"
-  • "Check who ghosted you and why"
+      const extraction = await openai.responses.create({
+        model: "gpt-5",
+        instructions: `Extract business facts from the user message. Use context to infer unlabeled values.
+CRITICAL: If a field is not mentioned or cannot be inferred, DO NOT include it in the output. Do not return empty strings, zeros, or false values unless explicitly stated.
+South Africa context. ${contextHint}`,
+        input: `Examples:
+Input: 'I run a restaurant, been trading 2 years, make 300k a month, need 1.2m'
+Output: {"extracted":{"industry":"Restaurant","yearsTrading":2,"monthlyTurnover":300000,"amountRequested":1200000}}
 
-## PERSONALITY & TONE
+Input: 'hey' or 'hello' (greeting with no business info)
+Output: {"extracted":{}}
 
-**Core Traits:**
-- **Short, punchy, no filter:** Say things in as few words as possible
-  Examples: "R400k a month? Okay, flex." / "Boom — more lenders unlocked."
-  
-- **Playful, cheeky, touch sarcastic — never rude:**
-  Examples: "No collateral? Same. Who has spare property lying around?" / "These guys love businesses like yours — they'd throw cash at you if they could."
-  
-- **Proactive — always suggest next step:** Don't leave user hanging
-  Examples: "Want me to stack them by cheapest, fastest, or most flexible?" / "I can unlock a few more if you're up for one more question."
-  
-- **Encouraging when news is bad:** Like a coach, not a computer
-  Examples: "Not yet — most lenders want a full year of trading. You'll have way more options after your first birthday." / "You're close — just need a little more revenue before the bigger guys will bite."
+Input: 'tell me more' (no new information)
+Output: {"extracted":{}}
 
-## BUCKET HANDLING (Match Updates)
+Input (when missing turnover and amount): '100k and 1 million'
+Output: {"extracted":{"monthlyTurnover":100000,"amountRequested":1000000}}
 
-**Rules:**
-- Reference buckets by state/change, not exact numbers unless reliably provided
-- Acknowledge shifts: "Good news: your qualified bucket just got bigger." / "We just unlocked a whole new set of options with that VAT info."
-- Keep it conversational: "Looks like a few more lenders joined the party — nice." / "Only a couple left in the 'need more info' pile now."
-- If counts are reliable, use them: "You now have 4 ready-to-go lenders." / "That bumped you from 6 to 11 matches."
+Input (when missing amount): '500k'
+Output: {"extracted":{"amountRequested":500000}}
 
-## PRODUCT EDUCATION
+Input: 'Yes, registered SA business with SA director, have 8 months bank statements'
+Output: {"extracted":{"saRegistered":true,"saDirector":true,"bankStatements":true}}
 
-Always highlight when relevant:
-- **Speed:** "Merchant Capital can fund in 24-48 hours"
-- **Term length:** "6-month terms vs 12-month terms"
-- **Interest range:** "2-3% per month typically" (with disclaimers)
-- **Repayment style:** "Fixed debit vs % of sales — MCA is like a bar tab, you pay it down as you make sales"
+Input (when missing ONLY bank statements): 'yes'
+Output: {"extracted":{"bankStatements":true}}
 
-## CONVERSATION FLOW
+Input (when missing ONLY VAT registration): 'no' or 'not registered'
+Output: {"extracted":{"vatRegistered":false}}
 
-1. **FIRST INTERACTION:** Don't mention matches until you have business info
-   User: "hey i need money"
-   Frank: "Need cash? Cool. What's your business and how much are we talking?"
+Input (when missing SA registration and director): 'yes to both'
+Output: {"extracted":{"saRegistered":true,"saDirector":true}}
 
-2. **INFORMATION GATHERING:** Capture multiple details at once
-   "What industry? Monthly revenue? How long trading?"
+Input: 'Not VAT registered yet, in Gauteng'
+Output: {"extracted":{"vatRegistered":false,"province":"Gauteng"}}
 
-3. **MATCHING & RESULTS:** Only when you have enough info
-   - Share meaningful results with context
-   - Suggest trade-offs: "At R2m, only 1 lender fits. Drop to R1.5m and 3 more open up"
-   - Amount flexibility: "You could unlock more options if you're willing to consider a lower amount"
+Current profile: ${JSON.stringify(currentProfile)}
 
-## EDGE CASES
+Now extract from:
+${message}`,
+        text: {
+          format: {
+            type: "json_schema",
+            name: ExtractSchema.name,
+            schema: ExtractSchema.schema,
+            strict: false
+          }
+        }
+      });
 
-**No qualified lenders:**
-"Most lenders want 6-12 months trading — you'll have way more options after month 6.
+      const rawExtracted = JSON.parse(extraction.output_text).extracted as Partial<Profile>;
 
-I can save your info and check back when you qualify.
+      // Clean up: remove empty strings, zeros, and false positives that should be undefined
+      const extracted: Partial<Profile> = {};
 
-Want me to save this and remind you? Or see what micro-lenders might work now?"
+      // Only include fields that have meaningful values
+      if (rawExtracted.industry && rawExtracted.industry.trim() !== '') {
+        extracted.industry = rawExtracted.industry;
+      }
+      if (rawExtracted.yearsTrading && rawExtracted.yearsTrading > 0) {
+        extracted.yearsTrading = rawExtracted.yearsTrading;
+      }
+      if (rawExtracted.monthlyTurnover && rawExtracted.monthlyTurnover > 0) {
+        extracted.monthlyTurnover = rawExtracted.monthlyTurnover;
+      }
+      if (rawExtracted.amountRequested && rawExtracted.amountRequested > 0) {
+        extracted.amountRequested = rawExtracted.amountRequested;
+      }
+      if (rawExtracted.urgencyDays && rawExtracted.urgencyDays > 0) {
+        extracted.urgencyDays = rawExtracted.urgencyDays;
+      }
+      if (rawExtracted.useOfFunds && rawExtracted.useOfFunds.trim() !== '') {
+        extracted.useOfFunds = rawExtracted.useOfFunds;
+      }
+      if (rawExtracted.province && rawExtracted.province.trim() !== '') {
+        extracted.province = rawExtracted.province;
+      }
 
-**Only 'Need More Info' matches:**
-"You're close! 
+      // Boolean fields: only include if explicitly true or false (not undefined)
+      if (rawExtracted.vatRegistered !== undefined && rawExtracted.vatRegistered !== null) {
+        extracted.vatRegistered = rawExtracted.vatRegistered;
+      }
+      if (rawExtracted.collateralAcceptable !== undefined && rawExtracted.collateralAcceptable !== null) {
+        extracted.collateralAcceptable = rawExtracted.collateralAcceptable;
+      }
+      if (rawExtracted.saRegistered !== undefined && rawExtracted.saRegistered !== null) {
+        extracted.saRegistered = rawExtracted.saRegistered;
+      }
+      if (rawExtracted.saDirector !== undefined && rawExtracted.saDirector !== null) {
+        extracted.saDirector = rawExtracted.saDirector;
+      }
+      if (rawExtracted.bankStatements !== undefined && rawExtracted.bankStatements !== null) {
+        extracted.bankStatements = rawExtracted.bankStatements;
+      }
 
-I can unlock 12 matches if you answer 2 quick questions.
+      console.log('📊 Extracted data:', extracted);
+      return extracted;
+    } catch (error) {
+      console.error('❌ Extraction error:', error);
+      return {};
+    }
+  }
 
-Ready to unlock them? Or want to see what's holding them back?"
+  /**
+   * Generate response using small context and style variation
+   */
+  private static async generateResponse(
+    message: string,
+    profile: Partial<Profile>,
+    matches: { qualified: Product[]; notQualified: any[]; needMoreInfo: any[] },
+    chatHistory: ChatCompletionMessageParam[]
+  ): Promise<string> {
+    const small = pickSmallContext(matches);
+    const nextGroup = nextQuestionGroup(profile);
+    const basicsDone = hasHardRequirements(profile);
+    const levers = basicsDone ? computeLevers(profile, matches) : [];
 
-**Mostly disqualified:**
-"Right now only micro-lenders will work.
+    // EARLY EXIT: if we still need required fields, ask for next group
+    if (!basicsDone && nextGroup) {
+      // Progressive disclosure: ask for the next set of missing fields
+      const forced = [
+        "Let's get you matched.",      // Layer 1
+        "",
+        nextGroup,                     // Layer 2 (ask for next missing group)
+        "",
+        "• Share those now\n• Ask what lenders usually look for" // Layer 3 CTAs (2 items)
+      ].join("\n\n");
 
-The bigger players need more trading history or higher revenue.
+      // Don't dedupe the early question flow - these are structured questions that should always show
+      return forced;
+    }
+    
+    const profileText = Object.entries(profile)
+      .map(([k, v]) => `- ${k}: ${v}`)
+      .join('\n') || '- none';
 
-Want to see the micro-lender options? Or wait until you qualify for the bigger fish?"
+    // Ground truth counts (use full lists, not trimmed small context)
+    const counts = {
+      qualified: matches.qualified.length,
+      needMoreInfo: matches.needMoreInfo.length,
+      notQualified: matches.notQualified.length
+    };
 
-## PRODUCT EDUCATION
+    const genUser = `
+USER:
+"${message}"
 
-When user asks "how do these work?" or multiple product types appear:
+KNOWN PROFILE (don't re-ask):
+${profileText}
 
-**Format comparison tables:**
-Lender | Amount | Speed | Repayment | Term | Rate
----|---|---|---|---|---
-Bridgement | R50k-R5M | 1-2 days | Weekly debit | 3-12mo | from 3%/mo
+COUNTS (authoritative, do not invent):
+qualified=${counts.qualified}, needMoreInfo=${counts.needMoreInfo}, notQualified=${counts.notQualified}
 
-**Use plain language analogies:**
-- MCA: "Like a bar tab — repay as you sell"
-- Fixed debit: "Like a gym membership — same amount every week"
-- Invoice finance: "Basically selling your invoice to get paid early"
-- Revenue-based: "They take a cut of your monthly turnover"
+FLOW CONTROL:
+BASICS_DONE=${basicsDone ? 'true' : 'false'}
 
-## EXAMPLES OF 3-LAYER STRUCTURE:
+LEVER HINTS:
+${levers.join(' | ') || 'none'}
 
-User: "I run a café, need R500k for renovations"
+For education, use these one-liners when asked:
+fixed-monthly → "${EDU['fixed-monthly']}"
+percent-of-sales → "${EDU['percent-of-sales']}"
+revolving → "${EDU['revolving']}"
 
-Frank:
-"Love a café glow-up. Bold move — let's get you cash before the paint dries.
+RETURN JSON ONLY:
+{
+  "summary": "3-layer response (double line breaks between layers, max 180 words). Be a partner: suggest the best next move, but list 2 alternatives."
+}
 
-I just need two quick things to match you properly: monthly revenue and how long you've been trading.
+STRICT RULES:
+- Never invent lender counts. Use COUNTS exactly as given.
+- If qualified=0, say so and explain which facts are missing to unlock matches.
+- Suggest practical levers (amount/urgency/collateral) when helpful.
+- Turnover is HARD—do not suggest changing it.
+- CTAs must be chosen from this list only (2–3 max): "Compare top 3 by cost", "See all qualified", "Apply to cheapest fast option", "Unlock maybes (2 quick questions)".
+- Only show an emoji when qualified increased this turn.
+- Never say "good fit for your business needs". Be crisp, confident, specific.
+`;
 
-Drop those numbers and we're off."
+    try {
+      // For Responses API, we can pass a simple string or message array
+      // If we have chat history, format it as a string context or use the simpler approach
+      let inputContent = genUser;
 
----
+      // Optionally prepend recent context if chat history exists
+      if (chatHistory.length > 0) {
+        const recentContext = chatHistory
+          .filter(msg => msg.role !== 'system')
+          .slice(-2) // Only last 2 exchanges
+          .map(msg => `${msg.role}: ${msg.content}`)
+          .join('\n');
+        inputContent = recentContext + '\n\nuser: ' + genUser;
+      }
 
-User: "R300k revenue, 10 months trading"
+      const response = await openai.responses.create({
+        model: "gpt-5",
+        reasoning: { effort: "low" },
+        instructions: this.getSystemPrompt(),
+        input: inputContent,
+        text: {
+          format: {
+            type: "json_object"
+          }
+        },
+        max_output_tokens: 450,
+        store: false
+      });
 
-Frank:
-"Ten months in and already pulling R300k/month? Not bad — you're cooking.
+      const parsed = JSON.parse(response.output_text);
+      const rawSummary = parsed.summary || "Let's get you matched with funding. Tell me about your business.";
 
-You've got 6 lenders ready to fund you, up to R2M, cash in as little as 24 hours. 5 others might join if we confirm VAT and collateral.
-
-Your move:
-• See your 6 ready-to-go offers
-• Unlock the 5 maybes  
-• Check who ghosted you and why"`;
+      return dedupeLines(rawSummary);
+    } catch (error) {
+      console.error('❌ Generation error:', error);
+      return "I'm ready to help you find funding. What type of business do you run?";
+    }
+  }
 
   /**
    * Process streaming response and extract data
@@ -208,7 +331,8 @@ Your move:
     onUpdate?: (event: StreamEvent) => void
   ): Promise<GPTResponse> {
     try {
-      const response = await fetch('/api/chat-stream', {
+      // Use existing chat streaming API route
+      const response = await fetch('/api/chat', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -218,8 +342,7 @@ Your move:
           chatHistory,
           profile,
           products: availableProducts,
-          currentMatches,
-          systemPrompt: this.systemPrompt
+          currentMatches
         }),
       })
 
@@ -248,23 +371,27 @@ Your move:
           for (const line of lines) {
             if (line.startsWith('data: ')) {
               try {
-                const data = JSON.parse(line.slice(6)) as StreamEvent
-                
-                if (data.type === 'content' && data.content) {
-                  fullResponse += data.content
+                const data = JSON.parse(line.slice(6)) as any;
+                // Content chunk
+                if (data && typeof data === 'object' && 'content' in data && data.content) {
+                  fullResponse += data.content as string;
                   if (onUpdate) {
-                    onUpdate(data)
+                    onUpdate({ type: 'content', content: data.content });
                   }
-                } else if (data.type === 'done') {
-                  extracted = data.extracted || {}
-                  if (data.fullResponse) {
-                    fullResponse = data.fullResponse
+                }
+                // Final chunk
+                else if (data && data.done) {
+                  extracted = data.extracted || {};
+                  if (data.summary) {
+                    fullResponse = data.summary;
                   }
                   if (onUpdate) {
-                    onUpdate(data)
+                    onUpdate({ type: 'done', content: fullResponse, extracted, fullResponse });
                   }
-                } else if (data.type === 'error') {
-                  throw new Error(data.error || 'Streaming error')
+                }
+                // Error chunk
+                else if (data && 'error' in data) {
+                  throw new Error(data.error || 'Streaming error');
                 }
               } catch (e) {
                 // Skip invalid JSON lines
@@ -287,7 +414,7 @@ Your move:
   }
 
   /**
-   * Send a message to Frank and get a response (with optional streaming)
+   * Send a message to Frank and get a response (with optional streaming and RAG)
    */
   static async chat(
     message: string,
@@ -299,175 +426,117 @@ Your move:
       notQualified: Array<{ product: Product; reasons: string[] }>;
       needMoreInfo: Array<{ product: Product; reasons: string[]; improvements: string[] }>;
     },
-    options: { stream?: boolean } = {}
+    options: { stream?: boolean; skipRAG?: boolean } = {}
   ): Promise<GPTResponse | AsyncIterable<OpenAI.Chat.Completions.ChatCompletionChunk>> {
     try {
-      // Check if API key exists
-      if (!process.env.NEXT_PUBLIC_OPENAI_API_KEY) {
-        console.error('❌ NO OPENAI API KEY - Cannot extract data');
-        throw new Error('OpenAI API key required for extraction');
+      // Get fresh lender data for filtering via API route (avoids HMR warnings)
+      const res = await fetch('/api/lenders', { cache: 'no-store' });
+      const allLenders = await res.json();
+      console.log(`📊 Found ${allLenders.length} lenders from API`);
+
+      const hasClientKey = !!process.env.NEXT_PUBLIC_OPENAI_API_KEY;
+
+      // First, get structured extraction
+      let newExtracted: Partial<Profile> = {};
+      let updatedProfile: Partial<Profile> = { ...profile };
+      let serverSummary: string | undefined;
+
+      if (hasClientKey) {
+        try {
+          newExtracted = await this.extractBusinessInfo(message, updatedProfile);
+        } catch (e) {
+          console.warn('⚠️ Client-side extraction failed, falling back to server /api/gpt:', e);
+          const serverResp = await this.serverStructured(message, updatedProfile, chatHistory);
+          newExtracted = serverResp.extracted || {};
+          serverSummary = serverResp.summary;
+        }
+      } else {
+        const serverResp = await this.serverStructured(message, updatedProfile, chatHistory);
+        newExtracted = serverResp.extracted || {};
+        serverSummary = serverResp.summary;
       }
 
-      // Format available products for GPT context
-      const productSummary = availableProducts.length > 0 
-        ? availableProducts.map(product => {
-            const interestRate = product.interestRate ? `, ${product.interestRate[0]}%-${product.interestRate[1]}%` : '';
-            const provinces = product.provincesAllowed ? `, ${product.provincesAllowed.join('/')}/only` : '';
-            const exclusions = product.sectorExclusions ? `, excludes ${product.sectorExclusions.join('/')}` : '';
-            const collateral = product.collateralRequired ? ', collateral required' : '';
-            const vatReq = product.vatRequired ? ', VAT required' : '';
-            
-            return `- ${product.provider}: R${(product.amountMin/1000)}k-R${(product.amountMax/1000)}k, ${product.minYears}+ years trading, R${(product.minMonthlyTurnover/1000)}k+ monthly turnover${vatReq}, ${product.speedDays[0]}-${product.speedDays[1]} days${interestRate}${provinces}${exclusions}${collateral}`;
-          }).join('\n')
-        : 'No lender data available';
+      updatedProfile = { ...updatedProfile, ...newExtracted };
 
-      // Format current match results for GPT context with full details
-      const matchContext = currentMatches ? {
-        qualified: currentMatches.qualified.map(p => p.provider).join(', '),
-        qualifiedCount: currentMatches.qualified.length,
-        qualifiedDetails: currentMatches.qualified.map(p => `${p.provider}: R${(p.amountMin/1000)}k-R${(p.amountMax/1000)}k, ${p.speedDays[0]}-${p.speedDays[1]} days, ${p.interestRate ? `${p.interestRate[0]}%-${p.interestRate[1]}%` : 'rates vary'}`).join('\n'),
-        notQualified: currentMatches.notQualified.map(item => `${item.product.provider} (${item.reasons.join('; ')})`).join(', '),
-        notQualifiedCount: currentMatches.notQualified.length,
-        needMoreInfo: currentMatches.needMoreInfo.map(item => `${item.product.provider} (needs: ${item.improvements.join('; ')})`).join(', '),
-        needMoreInfoCount: currentMatches.needMoreInfo.length,
-        needMoreInfoDetails: currentMatches.needMoreInfo.map(item => `${item.product.provider}: R${(item.product.amountMin/1000)}k-R${(item.product.amountMax/1000)}k, needs ${item.improvements.join(' & ')}`).join('\n')
-      } : null;
+      // Compute matches with whatever we have
+      let matches = currentMatches;
+      if (!matches && Object.keys(updatedProfile).length > 0) {
+        matches = filterProducts(updatedProfile as Profile, allLenders);
+      } else if (!matches) {
+        matches = { qualified: [], notQualified: [], needMoreInfo: [] };
+      }
 
-      // Only provide match context if user has meaningful business info
-      const hasBusinessInfo = Object.keys(profile).some(key => 
-        ['industry', 'monthlyTurnover', 'yearsTrading', 'amountRequested'].includes(key)
-      );
-
-      const matchResultsText = matchContext && hasBusinessInfo ? `
-CURRENT MATCH RESULTS (only mention if relevant to conversation):
-
-QUALIFIED LENDERS (${matchContext.qualifiedCount}):
-${matchContext.qualifiedDetails || 'NONE YET'}
-
-NEED MORE INFO LENDERS (${matchContext.needMoreInfoCount}):
-${matchContext.needMoreInfoDetails || 'NONE YET'}
-
-NOT QUALIFIED (${matchContext.notQualifiedCount}): ${matchContext.notQualified || 'NONE YET'}
-
-RESPONSE RULES:
-- Use the 3-LAYER STRUCTURE in every response
-- Reference bucket changes conversationally: "Just unlocked 3 more" or "Your qualified list just grew"
-- If counts are reliable: QUALIFIED = ${matchContext.qualifiedCount}, NEED MORE INFO = ${matchContext.needMoreInfoCount}
-- Surface specific lender details when helpful (speed, rates, terms)
-- Don't mention match results until you have at least 2-3 pieces of business info
-- When amount limits options: "Drop to R1.5m and 3 more lenders open up"
-- ALWAYS end with 2-3 actionable next steps
-` : `
-NO BUSINESS INFO YET - Focus on understanding their business first before mentioning any matches.
-
-RESPONSE RULES:
-- Use the 3-LAYER STRUCTURE even for initial interactions
-- Don't mention "match results" or "lender counts" yet
-- Focus on gathering: industry, revenue, years trading, funding amount
-- Keep it punchy and human
-- ALWAYS end with clear next step options
-`;
-
-      // Format current profile for context
-      const profileContext = Object.keys(profile).length > 0 ? `
-CURRENT USER PROFILE:
-${Object.entries(profile).map(([key, value]) => `- ${key}: ${value}`).join('\n')}
-
-NOTE: Do NOT ask for information that is already in the user's profile above.
-` : 'No profile information collected yet.';
-
-      const userPrompt = `User said: "${message}"
-
-${profileContext}
-
-CURRENT AVAILABLE LENDERS:
-${productSummary}
-${matchResultsText}
-TASK: Respond as Frank using the 3-layer structure. Extract any business information.
-
-REMEMBER THE 3-LAYER STRUCTURE:
-1. React/Acknowledge (sassy, witty, short)
-2. Context/Insight (explain where they stand, use tables when comparing)  
-3. Next Steps (offer 2-3 actionable options)
-
-Use DOUBLE line breaks between layers for multi-bubble display. Keep it punchy and human.
-
-When showing multiple lenders, format as a table if user asks to compare:
-Lender | Amount | Speed | Repayment | Term | Rate
-
-For product education, use the analogies and explanations from the product explainer library.
-
-EXTRACTION FIELDS:
-- industry, monthlyTurnover (number), amountRequested (number), yearsTrading (number)
-- vatRegistered (boolean), useOfFunds, urgencyDays (number), province
-- collateralAcceptable (boolean): true if user is okay with providing collateral, false if they prefer no collateral
-- contact: {name, email, phone}
-
-You must respond with valid JSON only:
-{
-  "summary": "your 3-layer Frank response with line breaks between layers",
-  "extracted": {field1: value1, ...}
-}`;
-
-      const messages: ChatCompletionMessageParam[] = [
-        { role: 'system', content: this.systemPrompt },
-        ...chatHistory.slice(-10).map(msg => ({
-          role: msg.role as 'user' | 'assistant' | 'system',
-          content: msg.content
-        })),
-        { role: 'user', content: userPrompt }
-      ];
-
-      console.log('🤖 AI CONTEXT:', {
-        userProfile: profile,
-        currentMatches: matchContext ? {
-          qualified: matchContext.qualifiedCount,
-          needMoreInfo: matchContext.needMoreInfoCount,
-          notQualified: matchContext.notQualifiedCount,
-          qualifiedLenders: matchContext.qualified,
-          needMoreInfoLenders: matchContext.needMoreInfo
-        } : 'none'
-      });
-
-      if (options.stream) {
-        // Return streaming response
-        const stream = await openai.chat.completions.create({
-          model: 'gpt-4o',
-          messages,
-          temperature: 0.1,
-          max_tokens: 300,
-          response_format: { type: "json_object" },
-          stream: true
-        });
-        return stream;
-      } else {
-        // Return regular response
-        const completion = await openai.chat.completions.create({
-          model: 'gpt-4o',
-          messages,
-          temperature: 0.1,
-          max_tokens: 300,
-          response_format: { type: "json_object" }
-        });
-        
-        const response = completion.choices[0]?.message?.content || '{}';
-        console.log('🤖 AI RAW RESPONSE:', response);
-        
+      // Generate conversational summary
+      let summary: string | undefined = serverSummary;
+      if (hasClientKey) {
         try {
-          const parsed = JSON.parse(response) as GPTResponse;
-          return {
-            summary: parsed.summary || "Let's get you matched with funding. Tell me about your business.",
-            extracted: { ...parsed.extracted }
-          };
-        } catch (error) {
-          console.error('❌ Failed to parse GPT response:', error);
-          console.error('❌ RAW RESPONSE WAS:', response);
-          throw new Error('Failed to parse GPT response: ' + error);
+          const basicsDone = hasHardRequirements(updatedProfile);
+          const historyForGen = basicsDone
+            ? chatHistory.slice(-3).map(msg => ({
+                role: msg.role as 'user' | 'assistant' | 'system',
+                content: msg.content.length > 500 ? msg.content.slice(0, 500) : msg.content
+              }))
+            : [];
+          summary = await this.generateResponse(message, updatedProfile, matches, historyForGen);
+        } catch (e) {
+          console.warn('⚠️ Client-side generation failed, using server or fallback summary:', e);
         }
       }
+
+      if (!summary) {
+        summary = "Let's get you matched with funding. Tell me about your business.";
+      }
+
+      console.log('🤖 FRANK RESPONSE:', {
+        userProfile: updatedProfile,
+        matchCounts: {
+          qualified: matches.qualified.length,
+          needMoreInfo: matches.needMoreInfo.length,
+          notQualified: matches.notQualified.length
+        },
+        lendersInContext: allLenders?.length || 0
+      });
+
+      return {
+        summary,
+        extracted: newExtracted
+      };
     } catch (error) {
-      console.error('❌ OpenAI API error (frontend):', error);
-      throw error;
+      console.error('❌ OpenAI logic error (frontend):', error);
+      // Final fallback
+      return {
+        summary: "I'm ready to help you find funding. What type of business do you run?",
+        extracted: {}
+      };
+    }
+  }
+
+  /**
+   * Server-side structured call using /api/gpt to avoid client-side key usage
+   */
+  private static async serverStructured(
+    message: string,
+    profile: Partial<Profile>,
+    chatHistory: Array<{ role: 'user' | 'assistant' | 'system'; content: string }> = [],
+  ): Promise<GPTResponse> {
+    try {
+      const resp = await fetch('/api/gpt', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ message, profile, chatHistory })
+      });
+      if (!resp.ok) throw new Error(`Server GPT failed: ${resp.status}`);
+      const data = await resp.json();
+      return {
+        summary: data.summary || "Let's get you matched with funding. Tell me about your business.",
+        extracted: data.extracted || {}
+      };
+    } catch (e) {
+      console.error('❌ /api/gpt error:', e);
+      return {
+        summary: "Let's get you matched with funding. Tell me about your business.",
+        extracted: {}
+      };
     }
   }
 
@@ -479,120 +548,28 @@ You must respond with valid JSON only:
     profile: Partial<Profile>
   ): Promise<string> {
     if (!process.env.NEXT_PUBLIC_OPENAI_API_KEY) {
-      return 'Well-suited for your business needs';
+      return 'Fast approval with competitive terms';
     }
 
     try {
       const prompt = `Given this business profile: ${JSON.stringify(profile)} 
 and these product notes: "${product.notes}", 
-provide a single bullet point rationale (max 18 words) for why this is a good match.`;
+provide a single bullet point rationale (max 18 words) for why this matches their needs.`;
 
-      const completion = await openai.chat.completions.create({
-        model: 'gpt-4o',
-        messages: [
-          { role: 'system', content: 'You are a funding advisor. Be concise and specific.' },
-          { role: 'user', content: prompt }
-        ],
-        temperature: 0.3,
-        max_tokens: 50
+      const response = await openai.responses.create({
+        model: 'gpt-5',
+        reasoning: { effort: "low" },
+        instructions: 'You are a funding advisor. Be concise and specific. Avoid "good fit" language.',
+        input: prompt,
+        max_output_tokens: 50,
+        store: false
       });
 
-      return completion.choices[0]?.message?.content || 'Good fit for your business profile';
+      return response.output_text || 'Fast approval with competitive terms';
     } catch (error) {
       console.error('Error getting product rationale:', error);
-      return 'Good fit for your business profile';
+      return 'Fast approval with competitive terms';
     }
   }
 
-  /**
-   * Extract business information from user message (fallback parser)
-   */
-  private static extractBusinessInfo(message: string): Partial<Profile> {
-    const result: Partial<Profile> = {};
-    const messageLower = message.toLowerCase();
-
-    // Extract amounts (improved to catch more patterns including "million")
-    const amountMatches = Array.from(message.matchAll(/(\d{1,3}(?:,\d{3})*|\d+)\s*(?:million|mil|m|k)?/gi));
-    
-    for (const match of amountMatches) {
-      const rawAmount = match[1].replace(/,/g, '');
-      const matchText = match[0].toLowerCase();
-      let amount = parseInt(rawAmount);
-      
-      // Apply multipliers
-      if (matchText.includes('million') || matchText.includes('mil')) {
-        amount = amount * 1000000;
-      } else if (matchText.includes('k')) {
-        amount = amount * 1000;
-      }
-      
-      if (amount > 1000 && amount < 100000000) {
-        const index = match.index || 0;
-        const contextBefore = message.slice(Math.max(0, index - 50), index).toLowerCase();
-        const contextAfter = message.slice(index, Math.min(message.length, index + 50)).toLowerCase();
-        const fullContext = contextBefore + contextAfter;
-        
-        if (!result.monthlyTurnover && (fullContext.includes('turnover') || fullContext.includes('revenue') || fullContext.includes('monthly'))) {
-          result.monthlyTurnover = amount;
-        } else if (!result.amountRequested && (fullContext.includes('need') || fullContext.includes('loan') || fullContext.includes('funding'))) {
-          result.amountRequested = amount;
-        }
-      }
-    }
-
-    // Extract years
-    const yearsMatch = message.match(/(\d+)\s*years?/i);
-    if (yearsMatch) {
-      result.yearsTrading = parseInt(yearsMatch[1]);
-    }
-
-    // Extract VAT status
-    if (messageLower.includes('vat registered') || messageLower.includes('registered for vat') || messageLower.includes('vat yes')) {
-      result.vatRegistered = true;
-    } else if (messageLower.includes('not vat') || messageLower.includes('no vat') || messageLower.includes('vat no')) {
-      result.vatRegistered = false;
-    }
-
-    // Extract collateral preferences
-    if (messageLower.includes('collateral') && (messageLower.includes('ok') || messageLower.includes('okay') || messageLower.includes('yes') || messageLower.includes('fine') || messageLower.includes('acceptable'))) {
-      result.collateralAcceptable = true;
-    } else if (messageLower.includes('collateral') && (messageLower.includes('no') || messageLower.includes('not') || messageLower.includes('prefer not') || messageLower.includes('avoid'))) {
-      result.collateralAcceptable = false;
-    }
-
-    // Extract industry (expanded list)
-    const industries = ['retail', 'manufacturing', 'services', 'technology', 'construction', 'hospitality', 'logistics', 'robotics', 'healthcare', 'finance'];
-    for (const industry of industries) {
-      if (messageLower.includes(industry)) {
-        result.industry = industry.charAt(0).toUpperCase() + industry.slice(1);
-        break;
-      }
-    }
-
-    // Extract provinces
-    const provinces = ['gauteng', 'western cape', 'kzn', 'eastern cape', 'free state', 'north west', 'limpopo', 'mpumalanga', 'northern cape'];
-    for (const province of provinces) {
-      if (messageLower.includes(province)) {
-        result.province = province === 'western cape' ? 'Western Cape' : 
-                         province === 'kzn' ? 'KZN' : 
-                         province.charAt(0).toUpperCase() + province.slice(1);
-        break;
-      }
-    }
-
-    // Extract contact info
-    const emailMatch = message.match(/([a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,})/);
-    if (emailMatch) {
-      result.contact = result.contact || {};
-      result.contact.email = emailMatch[1];
-    }
-
-    const phoneMatch = message.match(/(\+27\s*\d{2}\s*\d{3}\s*\d{4}|0\d{2}\s*\d{3}\s*\d{4}|\d{10})/);
-    if (phoneMatch) {
-      result.contact = result.contact || {};
-      result.contact.phone = phoneMatch[1].replace(/\s+/g, '');
-    }
-
-    return result;
-  }
 }
