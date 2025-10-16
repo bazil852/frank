@@ -208,7 +208,7 @@ async function processConversation(
               .map((c: any) => c.text)
               .join('')
           })
-          .join('\\n')
+          .join('\n')
 
         if (finalMessage) {
           console.log('💬 Final response:', finalMessage.substring(0, 100))
@@ -255,7 +255,7 @@ async function processConversation(
   }
 
   return {
-    summary: finalMessage || \"I've processed your information. What else can I help with?\",
+    summary: finalMessage || "I've processed your information. What else can I help with?",
     toolCallsMade
   }
 }
