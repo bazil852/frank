@@ -7,10 +7,22 @@ const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY || '',
 });
 
-// Server-side Pinecone client
-const pinecone = new Pinecone({
-  apiKey: process.env.PINECONE_API_KEY || '',
-});
+// Lazy Pinecone initialization - only create when needed
+let pinecone: Pinecone | null = null;
+
+function getPineconeClient(): Pinecone {
+  if (!process.env.PINECONE_API_KEY) {
+    throw new Error('PINECONE_API_KEY is not configured');
+  }
+
+  if (!pinecone) {
+    pinecone = new Pinecone({
+      apiKey: process.env.PINECONE_API_KEY,
+    });
+  }
+
+  return pinecone;
+}
 
 export interface QueryResult {
   text: string;
@@ -57,28 +69,26 @@ class PineconeServerRAG {
    * Query Pinecone for similar documents
    */
   async queryPinecone(query: string, topK: number = 5): Promise<QueryResult[]> {
-    if (!process.env.PINECONE_API_KEY) {
-      throw new Error('PINECONE_API_KEY is required for querying');
-    }
-    
+    const client = getPineconeClient();
+
     // Generate embedding for the query
     const queryEmbedding = await this.generateEmbedding(query);
-    
+
     // Query Pinecone
-    const index = pinecone.Index(this.indexName);
+    const index = client.Index(this.indexName);
     const results = await index.namespace(this.namespace).query({
       vector: queryEmbedding,
       topK,
       includeMetadata: true,
     });
-    
+
     // Format results
     const formattedResults: QueryResult[] = results.matches?.map(match => ({
       text: match.metadata?.text as string || '',
       score: match.score || 0,
       metadata: match.metadata || {},
     })) || [];
-    
+
     return formattedResults;
   }
 
@@ -86,11 +96,8 @@ class PineconeServerRAG {
    * Upsert chunks to Pinecone
    */
   async upsertChunks(chunks: ChunkData[]): Promise<void> {
-    if (!process.env.PINECONE_API_KEY) {
-      throw new Error('PINECONE_API_KEY is required for upserting chunks');
-    }
-    
-    const index = pinecone.Index(this.indexName);
+    const client = getPineconeClient();
+    const index = client.Index(this.indexName);
     
     // Process chunks in batches
     const batchSize = 10;
@@ -125,11 +132,8 @@ class PineconeServerRAG {
    * Clear namespace
    */
   async clearNamespace(): Promise<void> {
-    if (!process.env.PINECONE_API_KEY) {
-      throw new Error('PINECONE_API_KEY is required for clearing namespace');
-    }
-    
-    const index = pinecone.Index(this.indexName);
+    const client = getPineconeClient();
+    const index = client.Index(this.indexName);
     await index.namespace(this.namespace).deleteAll();
     console.log(`Cleared all vectors in namespace: ${this.namespace}`);
   }
@@ -138,11 +142,8 @@ class PineconeServerRAG {
    * Check if index exists
    */
   async checkIndex(): Promise<boolean> {
-    if (!process.env.PINECONE_API_KEY) {
-      throw new Error('PINECONE_API_KEY is required');
-    }
-    
-    const indexList = await pinecone.listIndexes();
+    const client = getPineconeClient();
+    const indexList = await client.listIndexes();
     return indexList.indexes?.some(idx => idx.name === this.indexName) || false;
   }
 
