@@ -260,10 +260,11 @@ async function processConversation(
   }
 }
 
-// Tool definitions - flat format for Responses API
+// Tool definitions - Responses API format (needs both type AND name at top level)
 function getTools() {
   return [
     {
+      type: 'function',
       name: 'get_business_profile',
       description: 'Retrieve the current business profile for a user',
       parameters: {
@@ -273,6 +274,7 @@ function getTools() {
       }
     },
     {
+      type: 'function',
       name: 'update_business_profile',
       description: 'Update business profile with extracted information',
       parameters: {
@@ -294,6 +296,7 @@ function getTools() {
       }
     },
     {
+      type: 'function',
       name: 'search_lenders',
       description: 'Search for matching lenders based on profile',
       parameters: {
