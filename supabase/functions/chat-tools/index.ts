@@ -54,7 +54,7 @@ serve(async (req) => {
     // Import tools dynamically (we'll need to copy these)
     const tools = getTools()
 
-    const SYSTEM_PROMPT = \`You are Frank — SA funding matcher. Sharp, helpful, conversational.
+    const SYSTEM_PROMPT = `You are Frank — SA funding matcher. Sharp, helpful, conversational.
 
 **CRITICAL: ALWAYS RESPOND WITH TEXT AFTER YOUR REASONING**
 
@@ -82,7 +82,7 @@ When a user provides business information:
 - ALWAYS call update_business_profile() when you extract anything
 - **ALWAYS WRITE A TEXT RESPONSE TO THE USER** (never stop at reasoning/tools)
 - Be conversational and helpful
-- Format your response with markdown for better readability\`
+- Format your response with markdown for better readability`
 
     // Build conversation context
     const conversationItems = [
@@ -152,14 +152,14 @@ async function processConversation(
     iteration++
     const elapsed = Date.now() - startTime
 
-    console.log(\`\\n🔄 Iteration \${iteration}/\${maxIterations} (\${elapsed}ms elapsed)\`)
+    console.log(`\n🔄 Iteration ${iteration}/${maxIterations} (${elapsed}ms elapsed)`)
 
     try {
       // Call OpenAI Responses API
       const response = await fetch('https://api.openai.com/v1/responses', {
         method: 'POST',
         headers: {
-          'Authorization': \`Bearer \${apiKey}\`,
+          'Authorization': `Bearer ${apiKey}`,
           'Content-Type': 'application/json'
         },
         body: JSON.stringify({
@@ -174,7 +174,7 @@ async function processConversation(
       if (!response.ok) {
         const error = await response.text()
         console.error('❌ OpenAI API error:', error)
-        throw new Error(\`OpenAI API error: \${response.status} - \${error}\`)
+        throw new Error(`OpenAI API error: ${response.status} - ${error}`)
       }
 
       const data = await response.json()
@@ -219,7 +219,7 @@ async function processConversation(
       // Execute function calls
       for (const call of functionCalls) {
         toolCallsMade++
-        console.log(\`\\n⚙️  Executing tool \${toolCallsMade}: \${call.name}\`)
+        console.log(`\n⚙️  Executing tool ${toolCallsMade}: ${call.name}`)
 
         try {
           let args = {}
@@ -228,7 +228,7 @@ async function processConversation(
           }
 
           const result = await executeToolCall(call.name, args, userId, sessionId)
-          console.log(\`✅ Tool result:\`, result)
+          console.log('✅ Tool result:', result)
 
           conversationItems.push({
             type: 'function_call_output',
@@ -236,7 +236,7 @@ async function processConversation(
             output: JSON.stringify(result)
           })
         } catch (error) {
-          console.error(\`❌ Tool execution failed:\`, error)
+          console.error('❌ Tool execution failed:', error)
 
           conversationItems.push({
             type: 'function_call_output',
@@ -326,7 +326,7 @@ async function executeToolCall(
   const SUPABASE_ANON_KEY = Deno.env.get('SUPABASE_ANON_KEY')!
   const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY)
 
-  console.log(\`🔧 Executing tool: \${name}\`, { args, userId, sessionId })
+  console.log(`🔧 Executing tool: ${name}`, { args, userId, sessionId })
 
   switch (name) {
     case 'get_business_profile': {
@@ -378,6 +378,6 @@ async function executeToolCall(
     }
 
     default:
-      return { success: false, error: \`Unknown tool: \${name}\` }
+      return { success: false, error: `Unknown tool: ${name}` }
   }
 }
