@@ -6,11 +6,9 @@ import { ExtractSchema, getStyleHint, dedupeLines } from './ai-schemas';
 import { EDU } from './requirements';
 import { nextQuestionGroup, hasHardRequirements } from './flow';
 
-// Initialize OpenAI client for frontend use
-// Note: In production, you should use a proxy/edge function to hide the API key
 const openai = new OpenAI({
   apiKey: process.env.NEXT_PUBLIC_OPENAI_API_KEY || '',
-  dangerouslyAllowBrowser: true // Required for client-side usage
+  dangerouslyAllowBrowser: true 
 });
 
 export interface GPTResponse {
@@ -48,12 +46,9 @@ Tone rules:
 ${styleHint}`;
   }
 
-  /**
-   * Extract business information using structured JSON schema
-   */
   private static async extractBusinessInfo(message: string, currentProfile: Partial<Profile> = {}): Promise<Partial<Profile>> {
     try {
-      // Build context about what we're still missing (ALL fields, not just Group 1)
+      
       const missingFields = [];
       if (!currentProfile.industry) missingFields.push('industry');
       if (!currentProfile.yearsTrading) missingFields.push('years trading');
@@ -121,10 +116,8 @@ ${message}`,
 
       const rawExtracted = JSON.parse(extraction.output_text).extracted as Partial<Profile>;
 
-      // Clean up: remove empty strings, zeros, and false positives that should be undefined
       const extracted: Partial<Profile> = {};
 
-      // Only include fields that have meaningful values
       if (rawExtracted.industry && rawExtracted.industry.trim() !== '') {
         extracted.industry = rawExtracted.industry;
       }
@@ -147,7 +140,6 @@ ${message}`,
         extracted.province = rawExtracted.province;
       }
 
-      // Boolean fields: only include if explicitly true or false (not undefined)
       if (rawExtracted.vatRegistered !== undefined && rawExtracted.vatRegistered !== null) {
         extracted.vatRegistered = rawExtracted.vatRegistered;
       }
@@ -172,9 +164,6 @@ ${message}`,
     }
   }
 
-  /**
-   * Generate response using small context and style variation
-   */
   private static async generateResponse(
     message: string,
     profile: Partial<Profile>,
@@ -186,18 +175,16 @@ ${message}`,
     const basicsDone = hasHardRequirements(profile);
     const levers = basicsDone ? computeLevers(profile, matches) : [];
 
-    // EARLY EXIT: if we still need required fields, ask for next group
     if (!basicsDone && nextGroup) {
-      // Progressive disclosure: ask for the next set of missing fields
+      
       const forced = [
-        "Let's get you matched.",      // Layer 1
+        "Let's get you matched.",      
         "",
-        nextGroup,                     // Layer 2 (ask for next missing group)
+        nextGroup,                     
         "",
-        "• Share those now\n• Ask what lenders usually look for" // Layer 3 CTAs (2 items)
+        "• Share those now\n• Ask what lenders usually look for" 
       ].join("\n\n");
 
-      // Don't dedupe the early question flow - these are structured questions that should always show
       return forced;
     }
     
@@ -205,7 +192,6 @@ ${message}`,
       .map(([k, v]) => `- ${k}: ${v}`)
       .join('\n') || '- none';
 
-    // Ground truth counts (use full lists, not trimmed small context)
     const counts = {
       qualified: matches.qualified.length,
       needMoreInfo: matches.needMoreInfo.length,
@@ -249,15 +235,13 @@ STRICT RULES:
 `;
 
     try {
-      // For Responses API, we can pass a simple string or message array
-      // If we have chat history, format it as a string context or use the simpler approach
+
       let inputContent = genUser;
 
-      // Optionally prepend recent context if chat history exists
       if (chatHistory.length > 0) {
         const recentContext = chatHistory
           .filter(msg => msg.role !== 'system')
-          .slice(-2) // Only last 2 exchanges
+          .slice(-2) 
           .map(msg => `${msg.role}: ${msg.content}`)
           .join('\n');
         inputContent = recentContext + '\n\nuser: ' + genUser;
@@ -287,9 +271,6 @@ STRICT RULES:
     }
   }
 
-  /**
-   * Process streaming response and extract data
-   */
   static async processStream(
     stream: AsyncIterable<OpenAI.Chat.Completions.ChatCompletionChunk>
   ): Promise<GPTResponse> {
@@ -315,9 +296,6 @@ STRICT RULES:
     }
   }
 
-  /**
-   * Stream chat response from API
-   */
   static async streamChat(
     message: string,
     chatHistory: Array<{ role: 'user' | 'assistant' | 'system'; content: string }> = [],
@@ -331,7 +309,7 @@ STRICT RULES:
     onUpdate?: (event: StreamEvent) => void
   ): Promise<GPTResponse> {
     try {
-      // Use existing chat streaming API route
+      
       const response = await fetch('/api/chat', {
         method: 'POST',
         headers: {
@@ -372,14 +350,14 @@ STRICT RULES:
             if (line.startsWith('data: ')) {
               try {
                 const data = JSON.parse(line.slice(6)) as any;
-                // Content chunk
+                
                 if (data && typeof data === 'object' && 'content' in data && data.content) {
                   fullResponse += data.content as string;
                   if (onUpdate) {
                     onUpdate({ type: 'content', content: data.content });
                   }
                 }
-                // Final chunk
+                
                 else if (data && data.done) {
                   extracted = data.extracted || {};
                   if (data.summary) {
@@ -389,12 +367,12 @@ STRICT RULES:
                     onUpdate({ type: 'done', content: fullResponse, extracted, fullResponse });
                   }
                 }
-                // Error chunk
+                
                 else if (data && 'error' in data) {
                   throw new Error(data.error || 'Streaming error');
                 }
               } catch (e) {
-                // Skip invalid JSON lines
+                
               }
             }
           }
@@ -413,9 +391,6 @@ STRICT RULES:
     }
   }
 
-  /**
-   * Send a message to Frank and get a response (with optional streaming and RAG)
-   */
   static async chat(
     message: string,
     chatHistory: Array<{ role: 'user' | 'assistant' | 'system'; content: string }> = [],
@@ -429,14 +404,13 @@ STRICT RULES:
     options: { stream?: boolean; skipRAG?: boolean } = {}
   ): Promise<GPTResponse | AsyncIterable<OpenAI.Chat.Completions.ChatCompletionChunk>> {
     try {
-      // Get fresh lender data for filtering via API route (avoids HMR warnings)
+      
       const res = await fetch('/api/lenders', { cache: 'no-store' });
       const allLenders = await res.json();
       console.log(`📊 Found ${allLenders.length} lenders from API`);
 
       const hasClientKey = !!process.env.NEXT_PUBLIC_OPENAI_API_KEY;
 
-      // First, get structured extraction
       let newExtracted: Partial<Profile> = {};
       let updatedProfile: Partial<Profile> = { ...profile };
       let serverSummary: string | undefined;
@@ -458,7 +432,6 @@ STRICT RULES:
 
       updatedProfile = { ...updatedProfile, ...newExtracted };
 
-      // Compute matches with whatever we have
       let matches = currentMatches;
       if (!matches && Object.keys(updatedProfile).length > 0) {
         matches = filterProducts(updatedProfile as Profile, allLenders);
@@ -466,7 +439,6 @@ STRICT RULES:
         matches = { qualified: [], notQualified: [], needMoreInfo: [] };
       }
 
-      // Generate conversational summary
       let summary: string | undefined = serverSummary;
       if (hasClientKey) {
         try {
@@ -503,7 +475,7 @@ STRICT RULES:
       };
     } catch (error) {
       console.error('❌ OpenAI logic error (frontend):', error);
-      // Final fallback
+      
       return {
         summary: "I'm ready to help you find funding. What type of business do you run?",
         extracted: {}
@@ -511,9 +483,6 @@ STRICT RULES:
     }
   }
 
-  /**
-   * Server-side structured call using /api/gpt to avoid client-side key usage
-   */
   private static async serverStructured(
     message: string,
     profile: Partial<Profile>,
@@ -540,9 +509,6 @@ STRICT RULES:
     }
   }
 
-  /**
-   * Get match rationale for a specific product
-   */
   static async getProductRationale(
     product: any,
     profile: Partial<Profile>

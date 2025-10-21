@@ -1,9 +1,6 @@
 import { ConversationTracker } from '@/lib/db-conversations';
 import type { Profile } from '@/lib/filters';
 
-/**
- * Tool definitions for business profile management
- */
 export const businessProfileTools = [
   {
     type: "function" as const,
@@ -79,9 +76,6 @@ export const businessProfileTools = [
   }
 ];
 
-/**
- * Execute business profile tool calls
- */
 export async function handleBusinessProfileTool(
   toolName: string,
   args: any,
@@ -113,7 +107,7 @@ export async function handleBusinessProfileTool(
 
   if (toolName === 'update_business_profile') {
     try {
-      // Validate and clean the data
+      
       const cleanedData: Partial<Profile> = {};
 
       if (args.industry) cleanedData.industry = String(args.industry);

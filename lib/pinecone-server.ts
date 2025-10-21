@@ -1,13 +1,11 @@
-// Server-side only Pinecone client
+
 import { Pinecone } from '@pinecone-database/pinecone';
 import OpenAI from 'openai';
 
-// Server-side OpenAI client
 const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY || '',
 });
 
-// Lazy Pinecone initialization - only create when needed
 let pinecone: Pinecone | null = null;
 
 function getPineconeClient(): Pinecone {
@@ -49,9 +47,6 @@ class PineconeServerRAG {
     this.namespace = process.env.PINECONE_NAMESPACE || 'funding-knowledge';
   }
 
-  /**
-   * Generate embeddings using OpenAI
-   */
   private async generateEmbedding(text: string): Promise<number[]> {
     if (!process.env.OPENAI_API_KEY) {
       throw new Error('OPENAI_API_KEY is required for embeddings');
@@ -65,16 +60,11 @@ class PineconeServerRAG {
     return response.data[0].embedding;
   }
 
-  /**
-   * Query Pinecone for similar documents
-   */
   async queryPinecone(query: string, topK: number = 5): Promise<QueryResult[]> {
     const client = getPineconeClient();
 
-    // Generate embedding for the query
     const queryEmbedding = await this.generateEmbedding(query);
 
-    // Query Pinecone
     const index = client.Index(this.indexName);
     const results = await index.namespace(this.namespace).query({
       vector: queryEmbedding,
@@ -82,7 +72,6 @@ class PineconeServerRAG {
       includeMetadata: true,
     });
 
-    // Format results
     const formattedResults: QueryResult[] = results.matches?.map(match => ({
       text: match.metadata?.text as string || '',
       score: match.score || 0,
@@ -92,24 +81,18 @@ class PineconeServerRAG {
     return formattedResults;
   }
 
-  /**
-   * Upsert chunks to Pinecone
-   */
   async upsertChunks(chunks: ChunkData[]): Promise<void> {
     const client = getPineconeClient();
     const index = client.Index(this.indexName);
-    
-    // Process chunks in batches
+
     const batchSize = 10;
     for (let i = 0; i < chunks.length; i += batchSize) {
       const batch = chunks.slice(i, i + batchSize);
-      
-      // Generate embeddings for the batch
+
       const embeddings = await Promise.all(
         batch.map(chunk => this.generateEmbedding(chunk.text))
       );
-      
-      // Prepare vectors for upsert
+
       const vectors = batch.map((chunk, idx) => ({
         id: chunk.id,
         values: embeddings[idx],
@@ -118,8 +101,7 @@ class PineconeServerRAG {
           ...chunk.metadata,
         },
       }));
-      
-      // Upsert to Pinecone
+
       await index.namespace(this.namespace).upsert(vectors);
       
       console.log(`Upserted batch ${i / batchSize + 1} of ${Math.ceil(chunks.length / batchSize)}`);
@@ -128,9 +110,6 @@ class PineconeServerRAG {
     console.log(`Successfully upserted ${chunks.length} chunks to Pinecone`);
   }
 
-  /**
-   * Clear namespace
-   */
   async clearNamespace(): Promise<void> {
     const client = getPineconeClient();
     const index = client.Index(this.indexName);
@@ -138,18 +117,12 @@ class PineconeServerRAG {
     console.log(`Cleared all vectors in namespace: ${this.namespace}`);
   }
 
-  /**
-   * Check if index exists
-   */
   async checkIndex(): Promise<boolean> {
     const client = getPineconeClient();
     const indexList = await client.listIndexes();
     return indexList.indexes?.some(idx => idx.name === this.indexName) || false;
   }
 
-  /**
-   * Format retrieved knowledge for inclusion in prompt
-   */
   formatRetrievedKnowledge(results: QueryResult[]): string {
     if (results.length === 0) {
       return 'No relevant knowledge found.';
@@ -168,10 +141,8 @@ ${result.text}`;
   }
 }
 
-// Export singleton instance
 const pineconeServerRAG = new PineconeServerRAG();
 
-// Export functions
 export const queryPinecone = (query: string, topK?: number) => 
   pineconeServerRAG.queryPinecone(query, topK);
 

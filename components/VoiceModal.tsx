@@ -47,7 +47,6 @@ export default function VoiceModal({
       setConnectionStatus('connecting');
       setError(null);
 
-      // Create instructions based on current profile
       const profileContext = profile ? `
         Current business profile: 
         - Industry: ${profile.industry || 'Not specified'}
@@ -99,8 +98,7 @@ You are Frank, helping South African SMEs find business funding. Keep responses 
         }
         break;
       case 'response.done':
-        // Could extract business info from assistant response here
-        // and call onProfileUpdate if needed
+
         break;
     }
   };
@@ -152,7 +150,7 @@ You are Frank, helping South African SMEs find business funding. Keep responses 
             className="bg-white rounded-2xl p-6 w-full max-w-md shadow-2xl"
             onClick={(e) => e.stopPropagation()}
           >
-            {/* Header */}
+            {}
             <div className="flex items-center justify-between mb-6">
               <div>
                 <h3 className="text-xl font-semibold text-slate-900">
@@ -179,7 +177,7 @@ You are Frank, helping South African SMEs find business funding. Keep responses 
               </motion.button>
             </div>
 
-            {/* Error Display */}
+            {}
             {error && (
               <motion.div
                 initial={{ opacity: 0, y: -10 }}
@@ -190,7 +188,7 @@ You are Frank, helping South African SMEs find business funding. Keep responses 
               </motion.div>
             )}
 
-            {/* Voice Visualization */}
+            {}
             <div className="flex justify-center mb-8">
               <motion.div
                 animate={isRecording ? {
@@ -227,7 +225,7 @@ You are Frank, helping South African SMEs find business funding. Keep responses 
               </motion.div>
             </div>
 
-            {/* Transcript and Response */}
+            {}
             {(transcript || assistantResponse) && (
               <div className="mb-6 space-y-3 max-h-32 overflow-y-auto">
                 {transcript && (
@@ -247,7 +245,7 @@ You are Frank, helping South African SMEs find business funding. Keep responses 
               </div>
             )}
 
-            {/* Controls */}
+            {}
             <div className="flex justify-center gap-4">
               {!isConnected ? (
                 <motion.button
@@ -288,7 +286,7 @@ You are Frank, helping South African SMEs find business funding. Keep responses 
               )}
             </div>
 
-            {/* Instructions */}
+            {}
             <div className="mt-6 text-center">
               <p className="text-sm text-slate-600">
                 {!isConnected ? 

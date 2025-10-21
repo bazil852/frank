@@ -3,9 +3,6 @@ import { filterProducts, type Profile } from '@/lib/filters';
 import type { Product } from '@/lib/catalog';
 import { ConversationTracker } from '@/lib/db-conversations';
 
-/**
- * Tool definitions for lender search and matching
- */
 export const lenderSearchTools = [
   {
     type: "function" as const,
@@ -71,9 +68,6 @@ export const lenderSearchTools = [
   }
 ];
 
-/**
- * Execute lender search tool calls
- */
 export async function handleLenderSearchTool(
   toolName: string,
   args: any,
@@ -83,11 +77,10 @@ export async function handleLenderSearchTool(
 
   if (toolName === 'search_lenders') {
     try {
-      // Get all lenders from database
+      
       const allLenders = await getLendersFromDB();
       console.log(`📊 Retrieved ${allLenders.length} lenders from database`);
 
-      // Get profile to use
       let profile: Partial<Profile>;
       if (args.useCurrentProfile) {
         profile = await ConversationTracker.getUserBusinessProfile(userId) || {};
@@ -99,7 +92,6 @@ export async function handleLenderSearchTool(
 
       console.log('👤 Using profile:', profile);
 
-      // Filter lenders
       const results = filterProducts(profile as Profile, allLenders);
 
       console.log('✅ Match results:', {
@@ -215,7 +207,6 @@ export async function handleLenderSearchTool(
       const profile = await ConversationTracker.getUserBusinessProfile() || {};
       const results = filterProducts(profile as Profile, [lender]);
 
-      // Determine eligibility status
       let status: 'qualified' | 'needMoreInfo' | 'notQualified';
       let details: any;
 

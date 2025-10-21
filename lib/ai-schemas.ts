@@ -71,17 +71,15 @@ export function getStyleHint(): string {
   return pickRandom(STYLE_BANK);
 }
 
-// Keep last N phrases in memory to avoid repetition
 const lastLines = new Set<string>();
 
 export function dedupeLines(text: string): string {
   const lines = text.split('\n').map(l => l.trim());
   const fresh = lines.filter(l => l && !lastLines.has(l));
   fresh.forEach(l => lastLines.add(l));
-  // cap memory
+  
   if (lastLines.size > 200) lastLines.clear();
 
-  // If everything was filtered out, return original text to avoid empty responses
   const result = fresh.join('\n');
   return result.trim() || text;
 }

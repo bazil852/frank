@@ -1,18 +1,11 @@
-#!/usr/bin/env node
-
-/**
- * Script to migrate lender data from Supabase to Pinecone
- * Run with: node scripts/migrate-lenders.js
- */
 
 const https = require('https');
 
-const API_URL = 'http://localhost:3000/api/migrate-lenders';
+const API_URL = 'http:
 
 console.log('🚀 Starting lender data migration...');
 console.log('📡 Calling migration API...');
 
-// Make POST request to migration endpoint
 const postData = JSON.stringify({});
 
 const options = {

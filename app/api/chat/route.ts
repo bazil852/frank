@@ -20,7 +20,7 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const prompt = `User said: "${message}". Provide a friendly summary (max 30 words) acknowledging their business needs. Also extract any obvious business fields from their message: numbers might be ZAR amounts/turnover/days, "VAT" means vat_registered=true, common SA sectors map to industry. 
+    const prompt = `User said: "${message}". Provide a friendly summary (max 30 words) acknowledging their business needs. Also extract any obvious business fields from their message: numbers might be ZAR amounts/turnover/days, "VAT" means vat_registered=true, common SA sectors map to industry.
 
 IMPORTANT: Return ONLY valid JSON without markdown formatting or code blocks. Example:
 {"summary": "Got it, looking for R500k for your retail business.", "extracted": {"industry": "Retail", "amountRequested": 500000}}`;
@@ -42,9 +42,7 @@ IMPORTANT: Return ONLY valid JSON without markdown formatting or code blocks. Ex
       async start(controller) {
         try {
           for await (const event of completion) {
-            // Responses API streaming format is different
             if (event.type === 'response.output_item.added') {
-              // Skip initial item added events
               continue;
             }
 
@@ -57,8 +55,7 @@ IMPORTANT: Return ONLY valid JSON without markdown formatting or code blocks. Ex
               }
             }
           }
-          
-          // Process the complete response for entity extraction
+
           try {
             let cleanResponse = fullResponse.trim();
             if (cleanResponse.startsWith('```json') && cleanResponse.endsWith('```')) {
@@ -66,19 +63,19 @@ IMPORTANT: Return ONLY valid JSON without markdown formatting or code blocks. Ex
             } else if (cleanResponse.startsWith('```') && cleanResponse.endsWith('```')) {
               cleanResponse = cleanResponse.slice(3, -3).trim();
             }
-            
+
             const parsed = JSON.parse(cleanResponse);
             const extracted = parseExtracted(parsed.extracted || {}, message);
-            
-            controller.enqueue(encoder.encode(`data: ${JSON.stringify({ 
-              done: true, 
+
+            controller.enqueue(encoder.encode(`data: ${JSON.stringify({
+              done: true,
               summary: parsed.summary || fullResponse,
-              extracted 
+              extracted
             })}\n\n`));
           } catch (error) {
             console.error('Failed to parse final response:', error);
-            controller.enqueue(encoder.encode(`data: ${JSON.stringify({ 
-              done: true, 
+            controller.enqueue(encoder.encode(`data: ${JSON.stringify({
+              done: true,
               summary: fullResponse,
               extracted: parseExtracted({}, message)
             })}\n\n`));
@@ -115,7 +112,6 @@ function parseExtracted(extracted: any, message: string): Partial<Profile> {
   const result: Partial<Profile> = { ...extracted };
   const lower = message.toLowerCase();
 
-  // Amount parsing: support 1.2m, 300k, 500000, with context-based assignment
   const amountRegex = /r?\s*(\d+(?:[.,]\d+)?|\d{1,3}(?:[.,]\d{3})*)\s*([km])?/gi;
   const matches = Array.from(message.matchAll(amountRegex));
   let computedTurnover: number | null = null;
@@ -149,13 +145,11 @@ function parseExtracted(extracted: any, message: string): Partial<Profile> {
     const turnoverCue = Math.max(lastTurnoverIdx, lastRevenueIdx, lastMonthlyIdx, lastPerMonthIdx);
     const needCue = Math.max(lastNeedIdx, lastLoanIdx, lastFundIdx, lastFundingIdx, lastFinanceIdx, lastBorrowIdx, lastApplyIdx);
 
-    // Determine classification by nearest preceding cue; if both present, prefer 'need'
     if (needCue >= 0 && (turnoverCue < 0 || needCue >= turnoverCue)) {
       computedNeed = amount;
     } else if (turnoverCue >= 0) {
       computedTurnover = amount;
     } else {
-      // Fallback: use after-context hints
       const isTurnoverAfter = /turnover|revenue|monthly|per\s*month/.test(after);
       const isNeedAfter = /need|loan|fund|funding|finance|borrow|apply/.test(after);
       if (isNeedAfter) computedNeed = amount;
@@ -163,7 +157,6 @@ function parseExtracted(extracted: any, message: string): Partial<Profile> {
     }
   }
 
-  // Override with computed values if present (prefer explicit user numbers)
   if (computedTurnover !== null) {
     result.monthlyTurnover = computedTurnover;
   }
@@ -171,7 +164,6 @@ function parseExtracted(extracted: any, message: string): Partial<Profile> {
     result.amountRequested = computedNeed;
   }
 
-  // Urgency: numeric days or ASAP
   const daysMatch = message.match(/(\d+)\s*days?/i);
   if (daysMatch) {
     result.urgencyDays = parseInt(daysMatch[1]);
@@ -179,7 +171,6 @@ function parseExtracted(extracted: any, message: string): Partial<Profile> {
     result.urgencyDays = 3;
   }
 
-  // VAT detection with negative phrase handling
   if (result.vatRegistered === undefined) {
     const negVat = /(not\s+(yet\s+)?vat[-\s]?registered|no\s+vat\b|not\s+registered\s+for\s+vat|without\s+vat|non-?vat)/i;
     const posVat = /(\bvat[-\s]?registered\b|registered\s+for\s+vat|vat\s+reg(istration)?\b|vat\s+number)/i;
@@ -187,7 +178,6 @@ function parseExtracted(extracted: any, message: string): Partial<Profile> {
     else if (posVat.test(lower)) result.vatRegistered = true;
   }
 
-  // Industry detection
   const industries = ['Retail', 'Services', 'Manufacturing', 'Hospitality', 'Logistics', 'Construction', 'Technology', 'Healthcare'];
   for (const industry of industries) {
     if (lower.includes(industry.toLowerCase())) {
@@ -196,7 +186,6 @@ function parseExtracted(extracted: any, message: string): Partial<Profile> {
     }
   }
 
-  // Province detection
   const provinces = ['Gauteng','Western Cape','KwaZulu-Natal','KZN','Eastern Cape','Free State','North West','Limpopo','Mpumalanga','Northern Cape'];
   for (const p of provinces) {
     const re = new RegExp(`\\b${p.replace(/[-]/g, '[- ]')}\\b`, 'i');
@@ -206,7 +195,6 @@ function parseExtracted(extracted: any, message: string): Partial<Profile> {
     }
   }
 
-  // Years trading
   const yearsMatch = message.match(/(\d+)\s*years?/i);
   if (yearsMatch) result.yearsTrading = parseInt(yearsMatch[1]);
 

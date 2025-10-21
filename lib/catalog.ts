@@ -12,11 +12,11 @@ export type Product = {
   sectorExclusions?: string[];
   speedDays: [number, number];
   collateralRequired?: boolean;
-  interestRate?: [number, number]; // [min, max] annual percentage rates
+  interestRate?: [number, number]; 
   notes?: string;
-  repaymentStyle?: string; // e.g., "Weekly debit", "% of sales", "Monthly installment"
-  saDirectorRequired?: boolean; // New: SA director requirement
-  repaymentDescription?: string; // New: Detailed repayment explanation
+  repaymentStyle?: string; 
+  saDirectorRequired?: boolean; 
+  repaymentDescription?: string; 
 };
 
 export const PRODUCT_TYPE_EXPLAINERS = {

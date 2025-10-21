@@ -1,5 +1,5 @@
-import { serve } from 'https://deno.land/std@0.168.0/http/server.ts'
-import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
+import { serve } from 'https:
+import { createClient } from 'https:
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -7,7 +7,6 @@ const corsHeaders = {
 }
 
 serve(async (req) => {
-  // Handle CORS preflight
   if (req.method === 'OPTIONS') {
     return new Response('ok', { headers: corsHeaders })
   }
@@ -22,7 +21,6 @@ serve(async (req) => {
       sessionId
     })
 
-    // Check required fields
     if (!message) {
       return new Response(
         JSON.stringify({ error: 'Message is required' }),
@@ -43,7 +41,6 @@ serve(async (req) => {
       )
     }
 
-    // Check OpenAI API key
     const OPENAI_API_KEY = Deno.env.get('OPENAI_API_KEY')
     if (!OPENAI_API_KEY) {
       throw new Error('OPENAI_API_KEY not configured')
@@ -51,7 +48,6 @@ serve(async (req) => {
 
     const MODEL = Deno.env.get('OPENAI_MODEL') || 'gpt-5'
 
-    // Import tools dynamically (we'll need to copy these)
     const tools = getTools()
 
     const SYSTEM_PROMPT = `You are Frank — SA funding matcher. Sharp, helpful, conversational.
@@ -84,14 +80,12 @@ When a user provides business information:
 - Be conversational and helpful
 - Format your response with markdown for better readability`
 
-    // Build conversation context
     const conversationItems = [
       { role: 'developer', content: SYSTEM_PROMPT },
       ...chatHistory,
       { role: 'user', content: message }
     ]
 
-    // Process conversation with OpenAI
     const result = await processConversation(
       conversationItems,
       userId,
@@ -141,7 +135,7 @@ async function processConversation(
   apiKey: string,
   model: string,
   tools: any[],
-  maxIterations = 10 // Supabase allows 150s timeout!
+  maxIterations = 10
 ): Promise<{ summary: string; toolCallsMade: number }> {
   const startTime = Date.now()
   let iteration = 0
@@ -155,8 +149,7 @@ async function processConversation(
     console.log(`\n🔄 Iteration ${iteration}/${maxIterations} (${elapsed}ms elapsed)`)
 
     try {
-      // Call OpenAI Responses API
-      const response = await fetch('https://api.openai.com/v1/responses', {
+      const response = await fetch('https:
         method: 'POST',
         headers: {
           'Authorization': `Bearer ${apiKey}`,
@@ -184,7 +177,6 @@ async function processConversation(
         types: data.output?.map((item: any) => item.type)
       })
 
-      // Filter orphaned reasoning
       const filteredOutput = data.output.filter((item: any, i: number, arr: any[]) => {
         if (item.type !== 'reasoning') return true
         if (i + 1 < arr.length && arr[i + 1].type === 'function_call') return true
@@ -193,10 +185,8 @@ async function processConversation(
 
       conversationItems = [...conversationItems, ...filteredOutput]
 
-      // Find function calls
       const functionCalls = data.output.filter((item: any) => item.type === 'function_call')
 
-      // If no function calls, extract final message
       if (functionCalls.length === 0) {
         const assistantMessages = data.output.filter((item: any) => item.type === 'message')
 
@@ -216,7 +206,6 @@ async function processConversation(
         }
       }
 
-      // Execute function calls
       for (const call of functionCalls) {
         toolCallsMade++
         console.log(`\n⚙️  Executing tool ${toolCallsMade}: ${call.name}`)
@@ -260,7 +249,6 @@ async function processConversation(
   }
 }
 
-// Tool definitions - Responses API format (needs both type AND name at top level)
 function getTools() {
   return [
     {
@@ -309,7 +297,6 @@ function getTools() {
   ]
 }
 
-// Tool executor
 async function executeToolCall(
   name: string,
   args: any,
@@ -324,7 +311,6 @@ async function executeToolCall(
 
   switch (name) {
     case 'get_business_profile': {
-      // Get profile from anonymous_users table
       const { data, error } = await supabase
         .from('anonymous_users')
         .select('business_profile')
@@ -344,7 +330,6 @@ async function executeToolCall(
     }
 
     case 'update_business_profile': {
-      // Merge new data with existing profile
       const { data: existing } = await supabase
         .from('anonymous_users')
         .select('business_profile')
@@ -353,7 +338,6 @@ async function executeToolCall(
 
       const mergedProfile = { ...(existing?.business_profile || {}), ...args }
 
-      // Upsert into anonymous_users
       const { error } = await supabase
         .from('anonymous_users')
         .upsert({
@@ -379,7 +363,6 @@ async function executeToolCall(
     }
 
     case 'search_lenders': {
-      // Simplified - return mock data or query lenders table
       const { data: lenders } = await supabase
         .from('lenders')
         .select('*')

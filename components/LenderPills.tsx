@@ -48,7 +48,7 @@ function FullMatchesModal({ isOpen, onClose, matches }: FullMatchesModalProps) {
             className="bg-white rounded-2xl w-full max-w-4xl max-h-[90vh] shadow-2xl flex flex-col"
             onClick={(e) => e.stopPropagation()}
           >
-            {/* Header */}
+            {}
             <div className="flex items-center justify-between p-6 border-b border-slate-200">
               <div>
                 <h3 className="text-xl font-bold text-slate-900">Your Funding Matches</h3>
@@ -64,7 +64,7 @@ function FullMatchesModal({ isOpen, onClose, matches }: FullMatchesModalProps) {
               </button>
             </div>
 
-            {/* Tabs */}
+            {}
             <div className="px-6 pt-4">
               <MatchesTabs
                 qualifiedCount={matches.qualified.length}
@@ -75,18 +75,18 @@ function FullMatchesModal({ isOpen, onClose, matches }: FullMatchesModalProps) {
               />
             </div>
 
-            {/* Content */}
+            {}
             <div className="flex-1 p-6 overflow-y-auto">
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 {activeTab === 'qualified' && matches.qualified.map((product, index) => (
                   <MatchCard
                     key={product.id}
                     product={product}
-                    reasons={[]} // Qualified products don't need reasons, pass empty array
+                    reasons={[]} 
                     index={index}
                     onApply={() => {
                       console.log('Apply to:', product.id);
-                      // Handle apply action
+                      
                     }}
                   />
                 ))}
@@ -105,13 +105,13 @@ function FullMatchesModal({ isOpen, onClose, matches }: FullMatchesModalProps) {
                     key={item.product.id}
                     product={item.product}
                     reasons={item.reasons}
-                    improvements={[]} // Not qualified items don't have improvements
+                    improvements={[]} 
                     index={index}
                   />
                 ))}
               </div>
 
-              {/* Empty state */}
+              {}
               {((activeTab === 'qualified' && matches.qualified.length === 0) ||
                 (activeTab === 'needMoreInfo' && matches.needMoreInfo.length === 0) ||
                 (activeTab === 'notQualified' && matches.notQualified.length === 0)) && (
@@ -142,10 +142,8 @@ export default function LenderPills({ matches, hasUserInput }: LenderPillsProps)
   const qualifiedCount = matches.qualified.length;
   const totalLenders = matches.qualified.length + matches.needMoreInfo.length + matches.notQualified.length;
 
-  // Only show when user has started interacting and there are lenders
   if (!hasUserInput || totalLenders === 0) return null;
 
-  // Create array of all lenders for horizontal scroll
   const allLenders = [
     ...matches.qualified.map(product => ({ product, type: 'qualified' as const })),
     ...matches.needMoreInfo.map(item => ({ product: item.product, type: 'needMoreInfo' as const })),
@@ -195,7 +193,7 @@ export default function LenderPills({ matches, hasUserInput }: LenderPillsProps)
           </div>
         </div>
         
-        {/* Horizontal Scrollable Pills */}
+        {}
         <div className="overflow-x-auto scrollbar-hide">
           <div className="flex gap-2 px-4 pb-3 min-w-max">
             {allLenders.slice(0, 8).map((lender, index) => (
@@ -210,7 +208,7 @@ export default function LenderPills({ matches, hasUserInput }: LenderPillsProps)
               </motion.button>
             ))}
             
-            {/* Show more indicator if there are more than 8 lenders */}
+            {}
             {allLenders.length > 8 && (
               <motion.button
                 whileTap={{ scale: 0.95 }}
@@ -224,7 +222,7 @@ export default function LenderPills({ matches, hasUserInput }: LenderPillsProps)
         </div>
       </div>
 
-      {/* Full Matches Modal */}
+      {}
       <FullMatchesModal
         isOpen={showModal}
         onClose={() => setShowModal(false)}

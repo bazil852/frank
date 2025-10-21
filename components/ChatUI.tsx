@@ -48,21 +48,18 @@ const ChatUI = forwardRef<ChatUIRef, ChatUIProps>(({
   const hasLoadedHistory = useRef(false);
   const endRef = useRef<HTMLDivElement>(null);
 
-  // Expose reset function to parent component
   useImperativeHandle(ref, () => ({
     resetChat: async () => {
       try {
-        // Clear conversation history from database
-        await ConversationTracker.clearConversationHistory();
         
-        // Reset local state with empty messages (no initial message)
+        await ConversationTracker.clearConversationHistory();
+
         setMessages([]);
         
         setInput('');
         setMessageIndex(0);
         setSending(false);
-        
-        // Notify parent component to reset its state
+
         if (onReset) {
           onReset();
         }
@@ -74,7 +71,6 @@ const ChatUI = forwardRef<ChatUIRef, ChatUIProps>(({
     }
   }));
 
-  // Load conversation history on component mount
   useEffect(() => {
     const loadConversationHistory = async () => {
       if (hasLoadedHistory.current) return;
@@ -82,12 +78,11 @@ const ChatUI = forwardRef<ChatUIRef, ChatUIProps>(({
       
       try {
         setLoadingHistory(true);
-        
-        // Check if user has conversation history
+
         const hasHistory = await ConversationTracker.hasConversationHistory();
         
         if (hasHistory) {
-          // Load previous conversations
+          
           const history = await ConversationTracker.getConversationHistory();
           const summary = await ConversationTracker.getConversationSummary();
           
@@ -96,15 +91,14 @@ const ChatUI = forwardRef<ChatUIRef, ChatUIProps>(({
           }
           
           if (history.length > 0) {
-            // Convert conversation history to Message format
+            
             const loadedMessages: Message[] = history.map((msg, idx) => ({
               id: `loaded-${idx}`,
               type: msg.role === 'user' ? 'user' : 'bot',
               content: msg.content,
               timestamp: new Date(),
             }));
-            
-            // Add welcome back message
+
             loadedMessages.push({
               id: 'welcome-back',
               type: 'bot',
@@ -116,16 +110,16 @@ const ChatUI = forwardRef<ChatUIRef, ChatUIProps>(({
             const latestIndex = await ConversationTracker.getLatestMessageIndex();
             setMessageIndex(latestIndex);
           } else {
-            // No history, start with empty messages for welcome screen
+            
             setMessages([]);
           }
         } else {
-          // First time user, start with empty messages for welcome screen
+          
           setMessages([]);
         }
       } catch (error) {
         console.error('Error loading conversation history:', error);
-        // Fallback to empty messages for welcome screen
+        
         setMessages([]);
       } finally {
         setLoadingHistory(false);
@@ -135,13 +129,12 @@ const ChatUI = forwardRef<ChatUIRef, ChatUIProps>(({
     loadConversationHistory();
   }, []);
 
-  // Better autoscroll that accounts for animation timing
   const scrollToBottom = () => {
     endRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' });
   };
 
   useLayoutEffect(() => {
-    // Wait one frame so Framer Motion can finish inserting/animating nodes
+    
     requestAnimationFrame(scrollToBottom);
   }, [messages, sending]);
 
@@ -160,7 +153,7 @@ const ChatUI = forwardRef<ChatUIRef, ChatUIProps>(({
     setSending(true);
 
     try {
-      // Save user message to database
+      
       await ConversationTracker.saveMessage(
         'user',
         userMessage.content,
@@ -169,15 +162,13 @@ const ChatUI = forwardRef<ChatUIRef, ChatUIProps>(({
       );
       setMessageIndex(prev => prev + 1);
 
-      // Convert messages to chat history format
       const chatHistory = messages.map(msg => ({
         role: msg.type === 'user' ? 'user' as const : 'assistant' as const,
         content: msg.content
       }));
       
       const response = await onMessage(userMessage.content, chatHistory, personality);
-      
-      // Save bot response to database
+
       await ConversationTracker.saveMessage(
         'assistant',
         response,
@@ -186,10 +177,8 @@ const ChatUI = forwardRef<ChatUIRef, ChatUIProps>(({
       );
       setMessageIndex(prev => prev + 1);
 
-      // Update conversation metadata with personality
       await ConversationTracker.updateConversationMetadata({}, personality);
-      
-      // Add bot message with typing animation
+
       setTimeout(() => {
         const botMessage: Message = {
           id: (Date.now() + 1).toString(),
@@ -206,17 +195,16 @@ const ChatUI = forwardRef<ChatUIRef, ChatUIProps>(({
     }
   };
 
-
   return (
     <div className="w-full h-full min-h-0 flex flex-col bg-transparent rounded-2xl overflow-hidden">
-      {/* Chips Section */}
+      {}
       {showChips && !hideMobileFeatures && (
         <div className="hidden md:block px-6 py-4 bg-transparent flex-shrink-0">
           <ChipsBar profile={profile} />
         </div>
       )}
       
-      {/* Scrollable Chat Messages */}
+      {}
       <div ref={scrollRef} className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden p-6 space-y-4 bg-transparent scrollbar-hide">
         {loadingHistory ? (
           <div className="flex items-center justify-center h-full">
@@ -363,11 +351,11 @@ const ChatUI = forwardRef<ChatUIRef, ChatUIProps>(({
             </div>
           </motion.div>
         )}
-        {/* Sentinel element for accurate scrolling */}
+        {}
         <div ref={endRef} />
       </div>
       
-      {/* Input at Bottom */}
+      {}
       <div className="flex-shrink-0 p-5 bg-white/50 backdrop-blur-sm border-t border-slate-200">
         <div className="relative">
           <input

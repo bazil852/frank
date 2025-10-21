@@ -14,9 +14,7 @@ export interface ConversationData {
 }
 
 export class ConversationTracker {
-  /**
-   * Save a single message to the conversation history
-   */
+  
   static async saveMessage(
     role: 'user' | 'assistant',
     content: string,
@@ -53,9 +51,6 @@ export class ConversationTracker {
     }
   }
 
-  /**
-   * Save multiple messages at once (batch save)
-   */
   static async saveConversation(
     messages: ConversationMessage[],
     startIndex: number = 0
@@ -88,9 +83,6 @@ export class ConversationTracker {
     }
   }
 
-  /**
-   * Retrieve conversation history for the current user
-   */
   static async getConversationHistory(limit: number = 100): Promise<ConversationMessage[]> {
     const userId = AnonymousUserTracker.getUserId();
     
@@ -120,9 +112,6 @@ export class ConversationTracker {
     }
   }
 
-  /**
-   * Get conversation summary for the user
-   */
   static async getConversationSummary() {
     const userId = AnonymousUserTracker.getUserId();
     
@@ -135,7 +124,7 @@ export class ConversationTracker {
         .eq('user_id', userId)
         .single();
 
-      if (error && error.code !== 'PGRST116') throw error; // PGRST116 = no rows returned
+      if (error && error.code !== 'PGRST116') throw error; 
       return data;
     } catch (error) {
       console.error('Error retrieving conversation summary:', error);
@@ -143,16 +132,13 @@ export class ConversationTracker {
     }
   }
 
-  /**
-   * Clear conversation history for the current user (preserves anonymous profile)
-   */
   static async clearConversationHistory() {
     const userId = AnonymousUserTracker.getUserId();
     
     if (!userId) return false;
 
     try {
-      // Use the new database function that preserves user identity
+      
       const { error } = await supabase.rpc('clear_conversation_history_only', {
         p_user_id: userId
       });
@@ -165,9 +151,6 @@ export class ConversationTracker {
     }
   }
 
-  /**
-   * Reset user's business profile while preserving anonymous identity
-   */
   static async resetUserBusinessProfile() {
     const userId = AnonymousUserTracker.getUserId();
     
@@ -187,9 +170,6 @@ export class ConversationTracker {
     }
   }
 
-  /**
-   * Get the latest message index for continuing conversation
-   */
   static async getLatestMessageIndex(): Promise<number> {
     const userId = AnonymousUserTracker.getUserId();
     
@@ -212,9 +192,6 @@ export class ConversationTracker {
     }
   }
 
-  /**
-   * Check if user has previous conversations
-   */
   static async hasConversationHistory(): Promise<boolean> {
     const userId = AnonymousUserTracker.getUserId();
     
@@ -234,16 +211,13 @@ export class ConversationTracker {
     }
   }
 
-  /**
-   * Update conversation with profile and personality data
-   */
   static async updateConversationMetadata(profile: any, personality?: string) {
     const userId = AnonymousUserTracker.getUserId();
     
     if (!userId) return;
 
     try {
-      // Update conversation summary
+      
       await supabase
         .from('conversation_summaries')
         .upsert({
@@ -255,7 +229,6 @@ export class ConversationTracker {
           onConflict: 'user_id'
         });
 
-      // Also update the user's business profile for personalization
       if (profile && Object.keys(profile).length > 0) {
         await this.updateUserBusinessProfile(profile);
       }
@@ -264,11 +237,6 @@ export class ConversationTracker {
     }
   }
 
-  /**
-   * Update user's business profile in the database
-   * @param profileData - The profile data to update
-   * @param userIdOverride - Optional userId (for server-side calls where localStorage isn't available)
-   */
   static async updateUserBusinessProfile(profileData: any, userIdOverride?: string) {
     const userId = userIdOverride || AnonymousUserTracker.getUserId();
 
@@ -278,7 +246,7 @@ export class ConversationTracker {
     }
 
     try {
-      // Use the database function to merge profile data
+      
       const { error } = await supabase.rpc('update_user_business_profile', {
         p_user_id: userId,
         p_profile_data: profileData
@@ -291,10 +259,6 @@ export class ConversationTracker {
     }
   }
 
-  /**
-   * Get user's business profile from database
-   * @param userIdOverride - Optional userId (for server-side calls where localStorage isn't available)
-   */
   static async getUserBusinessProfile(userIdOverride?: string) {
     const userId = userIdOverride || AnonymousUserTracker.getUserId();
 
@@ -317,9 +281,6 @@ export class ConversationTracker {
     }
   }
 
-  /**
-   * Get complete user context (profile + conversation history)
-   */
   static async getUserContext() {
     const userId = AnonymousUserTracker.getUserId();
     

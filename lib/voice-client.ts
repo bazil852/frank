@@ -82,9 +82,8 @@ export class VoiceClient {
 
     return new Promise((resolve, reject) => {
       try {
-        // Use the session's client secret for WebSocket auth
-        // Note: Browser WebSocket doesn't support custom headers, so we pass the token in the URL
-        const wsUrl = `wss://api.openai.com/v1/realtime?model=${this.session!.model}&session_id=${this.session!.id}&client_secret=${this.session!.client_secret}`;
+
+        const wsUrl = `wss:
         console.log('Connecting to WebSocket with model:', this.session!.model);
         
         this.ws = new WebSocket(wsUrl);
@@ -165,7 +164,6 @@ export class VoiceClient {
         this.audioContext = new (window.AudioContext || (window as any).webkitAudioContext)();
       }
 
-      // Decode base64 audio data
       const binaryString = atob(audioData);
       const len = binaryString.length;
       const bytes = new Uint8Array(len);
@@ -173,7 +171,6 @@ export class VoiceClient {
         bytes[i] = binaryString.charCodeAt(i);
       }
 
-      // Convert to audio buffer
       const audioBuffer = await this.audioContext.decodeAudioData(bytes.buffer);
       const source = this.audioContext.createBufferSource();
       source.buffer = audioBuffer;
@@ -206,7 +203,7 @@ export class VoiceClient {
 
       this.mediaRecorder.ondataavailable = (event) => {
         if (event.data.size > 0 && this.ws?.readyState === WebSocket.OPEN) {
-          // Convert audio data to base64 and send
+          
           const reader = new FileReader();
           reader.onload = () => {
             const audioData = reader.result as string;
@@ -220,7 +217,7 @@ export class VoiceClient {
         }
       };
 
-      this.mediaRecorder.start(100); // Send audio data every 100ms
+      this.mediaRecorder.start(100); 
       this.isRecording = true;
       this.onRecordingChange?.(true);
 
@@ -237,12 +234,10 @@ export class VoiceClient {
       this.isRecording = false;
       this.onRecordingChange?.(false);
 
-      // Commit the audio buffer
       this.sendMessage({
         type: 'input_audio_buffer.commit'
       });
 
-      // Request response generation
       this.sendMessage({
         type: 'response.create'
       });

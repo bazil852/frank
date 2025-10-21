@@ -13,10 +13,9 @@ export async function GET(req: NextRequest) {
     const searchParams = req.nextUrl.searchParams;
     const query = searchParams.get('q');
     const action = searchParams.get('action');
-    
-    // Handle different test actions
+
     if (action === 'init') {
-      // Check if Pinecone index exists
+      
       const exists = await checkIndex();
       return NextResponse.json({ 
         success: true, 
@@ -26,7 +25,7 @@ export async function GET(req: NextRequest) {
     }
     
     if (action === 'clear') {
-      // Clear all vectors in namespace
+      
       await clearNamespace();
       return NextResponse.json({ 
         success: true, 
@@ -35,7 +34,7 @@ export async function GET(req: NextRequest) {
     }
     
     if (action === 'seed') {
-      // Seed with sample funding knowledge
+      
       const sampleDocuments = [
         {
           text: `# Government Funding Programs
@@ -139,8 +138,7 @@ Black Economic Empowerment (BEE) status can unlock additional funding:
           }
         }
       ];
-      
-      // Chunk the documents
+
       const allChunks = [];
       for (const doc of sampleDocuments) {
         const chunks = chunkMarkdown(doc.text, doc.metadata, {
@@ -149,8 +147,7 @@ Black Economic Empowerment (BEE) status can unlock additional funding:
         });
         allChunks.push(...chunks);
       }
-      
-      // Upsert to Pinecone
+
       await upsertChunks(allChunks);
       
       return NextResponse.json({ 
@@ -159,19 +156,16 @@ Black Economic Empowerment (BEE) status can unlock additional funding:
         chunks: allChunks.length
       });
     }
-    
-    // Default action: Query
+
     if (!query) {
       return NextResponse.json({ 
         error: 'Missing query parameter. Use ?q=your+query or ?action=init|clear|seed' 
       }, { status: 400 });
     }
-    
-    // Perform similarity search
+
     console.log('Querying Pinecone for:', query);
     const results = await queryPinecone(query, 5);
-    
-    // Format results for display
+
     const formattedKnowledge = formatRetrievedKnowledge(results);
     
     return NextResponse.json({
@@ -200,7 +194,7 @@ export async function POST(req: NextRequest) {
     const { documents, action } = body;
     
     if (action === 'upsert' && documents) {
-      // Chunk and upsert documents
+      
       const allChunks = [];
       
       for (const doc of documents) {

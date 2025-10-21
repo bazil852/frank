@@ -1,6 +1,4 @@
-/**
- * Tool definitions for data validation
- */
+
 export const validationTools = [
   {
     type: "function" as const,
@@ -21,7 +19,6 @@ export const validationTools = [
   }
 ];
 
-// Valid SA provinces with common variations
 const PROVINCES: Record<string, string[]> = {
   'Gauteng': ['gauteng', 'gautang', 'gt', 'jhb', 'johannesburg', 'pretoria'],
   'Western Cape': ['western cape', 'wc', 'cape town', 'ct', 'w cape', 'western-cape'],
@@ -34,9 +31,6 @@ const PROVINCES: Record<string, string[]> = {
   'Northern Cape': ['northern cape', 'nc', 'n cape', 'northern-cape', 'kimberley']
 };
 
-/**
- * Execute validation tool calls
- */
 export async function handleValidationTool(
   toolName: string,
   args: any
@@ -53,7 +47,6 @@ export async function handleValidationTool(
       };
     }
 
-    // Find matching province
     for (const [standardName, variations] of Object.entries(PROVINCES)) {
       if (variations.includes(input) || standardName.toLowerCase() === input) {
         return {
@@ -65,7 +58,6 @@ export async function handleValidationTool(
       }
     }
 
-    // No match found - suggest corrections
     const allProvinces = Object.keys(PROVINCES);
     return {
       valid: false,

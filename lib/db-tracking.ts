@@ -18,14 +18,12 @@ export interface ApplicationData {
 }
 
 export class DatabaseTracker {
-  /**
-   * Initialize or update user in database
-   */
+  
   static async initializeUser() {
     const session = AnonymousUserTracker.getUserSession();
     
     try {
-      // Check if user exists
+      
       const { data: existingUser } = await supabase
         .from('anonymous_users')
         .select('*')
@@ -33,7 +31,7 @@ export class DatabaseTracker {
         .single();
 
       if (!existingUser) {
-        // Create new user
+        
         await supabase
           .from('anonymous_users')
           .insert({
@@ -42,7 +40,7 @@ export class DatabaseTracker {
             metadata: session.metadata,
           });
       } else {
-        // Update last seen
+        
         await supabase
           .from('anonymous_users')
           .update({
@@ -52,21 +50,17 @@ export class DatabaseTracker {
           .eq('user_id', session.userId);
       }
 
-      // Create or update session
       await this.createOrUpdateSession();
     } catch (error) {
       console.error('Error initializing user:', error);
     }
   }
 
-  /**
-   * Create or update session
-   */
   static async createOrUpdateSession() {
     const session = AnonymousUserTracker.getUserSession();
     
     try {
-      // Check if session exists
+      
       const { data: existingSession } = await supabase
         .from('user_sessions')
         .select('*')
@@ -74,7 +68,7 @@ export class DatabaseTracker {
         .single();
 
       if (!existingSession) {
-        // Create new session
+        
         await supabase
           .from('user_sessions')
           .insert({
@@ -83,7 +77,7 @@ export class DatabaseTracker {
             device_info: session.metadata,
           });
       } else {
-        // Update page views
+        
         await supabase
           .from('user_sessions')
           .update({
@@ -96,9 +90,6 @@ export class DatabaseTracker {
     }
   }
 
-  /**
-   * Track user event
-   */
   static async trackEvent(eventName: string, eventData?: any) {
     const session = AnonymousUserTracker.getUserSession();
     
@@ -113,16 +104,12 @@ export class DatabaseTracker {
           page_url: typeof window !== 'undefined' ? window.location.href : null,
         });
 
-      // Also track locally
       AnonymousUserTracker.trackEvent(eventName, eventData);
     } catch (error) {
       console.error('Error tracking event:', error);
     }
   }
 
-  /**
-   * Track loan application
-   */
   static async trackApplication(application: ApplicationData) {
     const session = AnonymousUserTracker.getUserSession();
     
@@ -141,7 +128,6 @@ export class DatabaseTracker {
 
       if (error) throw error;
 
-      // Track as event too
       await this.trackEvent('application_submitted', {
         lender_id: application.lenderId,
         application_id: data.id,
@@ -154,9 +140,6 @@ export class DatabaseTracker {
     }
   }
 
-  /**
-   * Get user's application history
-   */
   static async getUserApplications() {
     const userId = AnonymousUserTracker.getUserId();
     
@@ -182,9 +165,6 @@ export class DatabaseTracker {
     }
   }
 
-  /**
-   * Get user's event history
-   */
   static async getUserEvents(limit = 50) {
     const userId = AnonymousUserTracker.getUserId();
     
@@ -204,9 +184,6 @@ export class DatabaseTracker {
     }
   }
 
-  /**
-   * End current session
-   */
   static async endSession() {
     const sessionId = AnonymousUserTracker.getSessionId();
     

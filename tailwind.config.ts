@@ -2,9 +2,9 @@ import type { Config } from 'tailwindcss'
 
 const config: Config = {
   content: [
-    './pages/**/*.{js,ts,jsx,tsx,mdx}',
-    './components/**/*.{js,ts,jsx,tsx,mdx}',
-    './app/**/*.{js,ts,jsx,tsx,mdx}',
+    './pages*.{js,ts,jsx,tsx,mdx}',
+    './components*.{js,ts,jsx,tsx,mdx}',
+    './app*.{js,ts,jsx,tsx,mdx}',
   ],
   darkMode: 'class',
   theme: {
@@ -31,11 +31,11 @@ const config: Config = {
     function({ addUtilities }: any) {
       addUtilities({
         '.scrollbar-hide': {
-          /* IE and Edge */
+          
           '-ms-overflow-style': 'none',
-          /* Firefox */
+          
           'scrollbar-width': 'none',
-          /* Safari and Chrome */
+          
           '&::-webkit-scrollbar': {
             display: 'none'
           }

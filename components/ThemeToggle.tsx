@@ -7,7 +7,6 @@ import { useTheme } from '@/hooks/useTheme';
 export default function ThemeToggle() {
   const { theme, toggleTheme } = useTheme();
 
-  // Defensive check to prevent SSR issues
   if (!theme) {
     return (
       <div className="p-3 rounded-2xl bg-slate-100 w-11 h-11">

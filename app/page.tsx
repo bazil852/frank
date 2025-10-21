@@ -50,27 +50,23 @@ export default function Home() {
 
   const updateProfile = useCallback(async (updates: Partial<Profile>) => {
     const updatedProfile = { ...profile, ...updates };
-    
-    // Update local state
+
     setProfile(updatedProfile);
     setFiltering(true);
-    
-    // Save profile updates to database for personalization
+
     try {
       await ConversationTracker.updateUserBusinessProfile(updates);
     } catch (error) {
       console.error('Error saving profile to database:', error);
     }
-    
-    // Track profile update event
+
     trackEvent('profile_updated', {
       updates,
       mode,
       userId,
       sessionId
     });
-    
-    // Show matches panel only when all hard requirements are present
+
     const hasAllHard = hasHardRequirements(updatedProfile);
     if (hasAllHard) {
       setHasUserInput(true);
@@ -87,7 +83,6 @@ export default function Home() {
     }
   }, []);
 
-  // Fetch products from database on component mount
   useEffect(() => {
     const fetchProducts = async () => {
       try {
@@ -103,7 +98,6 @@ export default function Home() {
     fetchProducts();
   }, []);
 
-  // Load user's saved business profile on component mount
   useEffect(() => {
     const loadUserProfile = async () => {
       try {
@@ -115,11 +109,10 @@ export default function Home() {
             ...prevProfile,
             ...savedProfile
           }));
-          
-          // Show matches only when all hard requirements are present
+
           if (hasHardRequirements(savedProfile)) {
             setHasUserInput(true);
-            // Unblur panel since user clearly had a previous conversation and all hard fields
+            
             setHasFirstResponse(true);
             setShowMatchesPanel(true);
           }
@@ -132,9 +125,8 @@ export default function Home() {
     loadUserProfile();
   }, [userId]);
 
-  // Monitor hasFirstResponse state changes for debugging
   useEffect(() => {
-    // Removed debug logs
+    
   }, [hasFirstResponse]);
 
   useEffect(() => {
@@ -150,8 +142,7 @@ export default function Home() {
         profile: profile
       });
       setMatches(result);
-      
-      // Only fetch GPT reasons if we have meaningful profile data
+
       const hasProfileData = profile.industry || profile.yearsTrading || profile.monthlyTurnover || profile.amountRequested;
       
       const newReasons: Record<string, string[]> = {};
@@ -168,13 +159,9 @@ export default function Home() {
             deterministic.push('Request within lender range');
           }
         }
-        
-        // Temporarily disable GPT rationale calls to prevent excessive API usage
+
         let gptReason = 'Fast approval with competitive terms';
-        // if (hasProfileData) {
-        //   gptReason = await fetchProductReasons(product, profile);
-        // }
-        
+
         newReasons[product.id] = [
           ...deterministic.slice(0, 2),
           gptReason
@@ -197,11 +184,10 @@ export default function Home() {
       console.log('💬 USER MESSAGE:', message);
       setIsProcessing(true);
 
-      // Use Supabase Edge Function (has 150s timeout vs Netlify's 10-26s)
       const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL;
       const apiUrl = SUPABASE_URL
         ? `${SUPABASE_URL}/functions/v1/chat-tools`
-        : '/api/chat-tools'; // Fallback to Netlify function
+        : '/api/chat-tools'; 
 
       console.log('🌐 Calling API:', apiUrl);
 
@@ -230,13 +216,11 @@ export default function Home() {
       console.log('🔧 TOOL CALLS MADE:', toolCallsMade);
       console.log('💬 AI RESPONSE:', fullResponse);
 
-      // Fetch the updated profile from the database (tools updated it)
       const updatedProfile = await ConversationTracker.getUserBusinessProfile() || {};
       console.log('📊 UPDATED PROFILE FROM DB:', updatedProfile);
 
       let currentMatches = matches;
 
-      // Recalculate matches if profile changed
       if (Object.keys(updatedProfile).length > 0) {
         currentMatches = filterProducts(updatedProfile as Profile, products);
         console.log('🎯 MATCHES AFTER TOOL EXECUTION:', {
@@ -245,12 +229,10 @@ export default function Home() {
           notQualified: currentMatches.notQualified.length
         });
 
-        // Update UI state
         setProfile(updatedProfile as Profile);
         setMatches(currentMatches);
       }
 
-      // Log extraction progress
       const finalProfile = updatedProfile as Profile;
       const requiredFields = ['industry', 'yearsTrading', 'monthlyTurnover', 'amountRequested', 'saRegistered', 'saDirector', 'bankStatements', 'province', 'vatRegistered'];
       const optionalFields = ['collateralAcceptable', 'useOfFunds', 'urgencyDays'];
@@ -266,7 +248,6 @@ export default function Home() {
         currentProfile: finalProfile
       });
 
-      // Show matches panel if we extracted data
       if (Object.keys(finalProfile).length > 0) {
         if (!hasFirstResponse) {
           setHasFirstResponse(true);
@@ -293,8 +274,7 @@ export default function Home() {
     } catch (error) {
       console.error('❌ CHAT ERROR:', error);
       setIsProcessing(false);
-      
-      // Show specific error details
+
       if (error instanceof Error) {
         console.error('❌ ERROR MESSAGE:', error.message);
         console.error('❌ ERROR STACK:', error.stack);
@@ -305,7 +285,7 @@ export default function Home() {
   };
 
   const handleChatReset = useCallback(async () => {
-    // Reset all local state
+    
     setProfile({});
     setHasUserInput(false);
     setHasFirstResponse(false);
@@ -318,8 +298,7 @@ export default function Home() {
     setMatchReasons({});
     setFiltering(false);
     setIsProcessing(false);
-    
-    // Reset user's business profile while preserving anonymous identity
+
     try {
       await ConversationTracker.resetUserBusinessProfile();
     } catch (error) {
@@ -339,7 +318,6 @@ export default function Home() {
   const toggleMatchesExpansion = () => {
     setExpandedPanel(prev => prev === 'matches' ? 'none' : 'matches');
   };
-
 
   const industries = [
     { value: 'Retail', label: 'Retail' },
@@ -372,7 +350,7 @@ export default function Home() {
 
   return (
     <div className="h-screen bg-slate-50 relative flex flex-col overflow-hidden">
-      {/* Background blur elements - hide when matches panel is shown */}
+      {}
       {!showMatchesPanel && (
         <div className="fixed inset-0 overflow-hidden pointer-events-none" style={{ height: '100%', width: '100%', opacity: 1 }}>
         <div 
@@ -436,7 +414,7 @@ export default function Home() {
         </div>
       )}
 
-      {/* Blur overlay to soften the background - hide when matches panel is shown */}
+      {}
       {!showMatchesPanel && (
         <div className="fixed inset-0 backdrop-blur-md pointer-events-none bg-white/10" />
       )}
@@ -445,7 +423,7 @@ export default function Home() {
         <Navbar onReset={async () => await chatUIRef.current?.resetChat()} />
       </header>
 
-      {/* Lender Pills - Mobile only, shown between navbar and chat when user has interacted */}
+      {}
       <LenderPills matches={matches} hasUserInput={hasUserInput} />
 
       <main className="flex-1 max-w-6xl mx-auto px-4 py-8 relative z-10 w-full flex flex-col min-h-0 overflow-hidden">
@@ -482,7 +460,6 @@ export default function Home() {
             {mode === 'form' && (
               <ModeToggle mode={mode} onModeChange={setMode} />
             )}
-
 
             {mode === 'form' ? (
               <motion.div 
@@ -577,7 +554,6 @@ export default function Home() {
                 />
               </motion.div>
             )}
-
 
             <AnimatePresence>
               {filtering && (

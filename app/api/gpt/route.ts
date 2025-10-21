@@ -24,7 +24,6 @@ export async function POST(request: NextRequest) {
       });
     }
 
-    // Base system prompt with personality overlay
     const baseSystemPrompt = `You are Frank — the shortcut to funding that actually lands. No dead ends, no 30-page forms.
 
 PERSONALITY & TONE:
@@ -73,7 +72,6 @@ CRITICAL RULES:
 - Match against the catalog below, never invent lenders
 - Track conversation state and know where you are in the flow`;
 
-    // Add personality if provided
     const personalityPrompt = personality 
       ? `\n\nIMPORTANT PERSONALITY INSTRUCTION: ${personality}\n\nYou MUST strictly adhere to this personality style in all your responses while maintaining accuracy and helpfulness.`
       : '\n\nBe professional, friendly, and direct. Use a warm but business-like tone.';
@@ -129,8 +127,7 @@ For a greeting like "hey" with no business info, respond like:
     }
 
     console.log('Sending to OpenAI with prompt:', prompt);
-    
-    // Build messages array with conversation history, filtering out null content
+
     const validChatHistory = chatHistory.slice(-20).filter((msg: any) => 
       msg && msg.content && typeof msg.content === 'string' && msg.content.trim() !== ''
     );
@@ -169,7 +166,6 @@ For a greeting like "hey" with no business info, respond like:
       return NextResponse.json({ rationale: responseText });
     } else if (message) {
       try {
-        // Clean response of any markdown formatting
         let cleanResponse = responseText.trim();
         if (cleanResponse.startsWith('```json') && cleanResponse.endsWith('```')) {
           cleanResponse = cleanResponse.slice(7, -3).trim();
@@ -177,7 +173,6 @@ For a greeting like "hey" with no business info, respond like:
           cleanResponse = cleanResponse.slice(3, -3).trim();
         }
 
-        // If response doesn't look like JSON, try to extract from fallback
         if (!cleanResponse.startsWith('{')) {
           console.warn('Response is not JSON format, using fallback extraction');
           console.warn('Raw response was:', responseText);
@@ -199,8 +194,7 @@ For a greeting like "hey" with no business info, respond like:
       } catch (error) {
         console.error('Failed to parse GPT response:', error);
         console.error('Response was:', responseText);
-        
-        // Fallback extraction from the message directly
+
         const extractedData = parseExtracted({}, message);
         return NextResponse.json({
           summary: 'Thanks for the information! Let me process that for you.',
@@ -222,12 +216,10 @@ For a greeting like "hey" with no business info, respond like:
 
 function parseExtracted(extracted: any, message: string): Partial<Profile> {
   const result: Partial<Profile> = {};
-  
+
   const messageLower = message.toLowerCase();
-  
-  // Special case: if the message contains detailed business summary, extract from it
+
   if (messageLower.includes('industry:') || messageLower.includes('years in business:') || messageLower.includes('monthly turnover:')) {
-    // Parse structured information from the message itself
     const industryMatch = message.match(/industry:\s*([^\n•]+)/i);
     if (industryMatch) result.industry = industryMatch[1].trim();
     
@@ -255,10 +247,8 @@ function parseExtracted(extracted: any, message: string): Partial<Profile> {
     console.log('Extracted from structured message:', result);
     return result;
   }
-  
-  // First, use the GPT extracted values
+
   if (extracted) {
-    // Ensure proper type conversion for numeric fields
     if (extracted.amountRequested) {
       result.amountRequested = typeof extracted.amountRequested === 'string' 
         ? parseInt(extracted.amountRequested.replace(/[^0-9]/g, ''))
@@ -291,8 +281,7 @@ function parseExtracted(extracted: any, message: string): Partial<Profile> {
     if (extracted.province) {
       result.province = extracted.province;
     }
-    
-    // Handle contact information
+
     if (extracted.contact) {
       result.contact = {};
       if (extracted.contact.name) {
@@ -306,24 +295,20 @@ function parseExtracted(extracted: any, message: string): Partial<Profile> {
       }
     }
   }
-  
-  // Then try to extract from the message if GPT didn't catch it
+
   if (!result.amountRequested || !result.monthlyTurnover) {
-    // Look for multiple amounts in the message
     const amountMatches = Array.from(message.matchAll(/R\s*(\d{1,3}(?:,\d{3})*|\d+)k?/gi));
     
     for (const match of amountMatches) {
       const rawAmount = match[1].replace(/,/g, '');
       const amount = match[0].includes('k') ? parseInt(rawAmount) * 1000 : parseInt(rawAmount);
-      
+
       if (amount > 1000 && amount < 100000000) {
-        // Get context around the amount
         const index = match.index || 0;
         const contextBefore = message.slice(Math.max(0, index - 50), index).toLowerCase();
         const contextAfter = message.slice(index, Math.min(message.length, index + 50)).toLowerCase();
         const fullContext = contextBefore + contextAfter;
-        
-        // Determine what this amount represents
+
         if (!result.monthlyTurnover && (fullContext.includes('turnover') || fullContext.includes('revenue') || fullContext.includes('monthly'))) {
           result.monthlyTurnover = amount;
         } else if (!result.amountRequested && (fullContext.includes('need') || fullContext.includes('loan') || fullContext.includes('funding') || fullContext.includes('finance'))) {
@@ -333,7 +318,6 @@ function parseExtracted(extracted: any, message: string): Partial<Profile> {
     }
   }
 
-  // Extract industry from common patterns
   if (!result.industry) {
     const industryPatterns = [
       'robotics', 'retail', 'services', 'manufacturing', 'hospitality', 'logistics', 
@@ -344,7 +328,6 @@ function parseExtracted(extracted: any, message: string): Partial<Profile> {
     const messageLower = message.toLowerCase();
     for (const pattern of industryPatterns) {
       if (messageLower.includes(pattern)) {
-        // Capitalize first letter
         result.industry = pattern.charAt(0).toUpperCase() + pattern.slice(1);
         if (pattern === 'tech') result.industry = 'Technology';
         break;
@@ -359,7 +342,6 @@ function parseExtracted(extracted: any, message: string): Partial<Profile> {
     }
   }
 
-  // VAT detection with negative phrase handling
   if (result.vatRegistered === undefined) {
     const lower = message.toLowerCase();
     const negVat = /(not\s+(yet\s+)?vat[-\s]?registered|no\s+vat\b|not\s+registered\s+for\s+vat|without\s+vat|non-?vat)/i;
@@ -378,26 +360,23 @@ function parseExtracted(extracted: any, message: string): Partial<Profile> {
     }
   }
 
-  // Extract contact information if not already captured
   if (!result.contact) {
     result.contact = {};
   }
-  
-  // Extract email addresses
+
   if (!result.contact.email) {
     const emailMatch = message.match(/([a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,})/);
     if (emailMatch) {
       result.contact.email = emailMatch[1];
     }
   }
-  
-  // Extract phone numbers (SA format)
+
   if (!result.contact.phone) {
     const phoneMatches = [
-      message.match(/(\+27\s*\d{2}\s*\d{3}\s*\d{4})/), // +27 11 123 4567
-      message.match(/(0\d{2}\s*\d{3}\s*\d{4})/), // 011 123 4567
-      message.match(/(\d{10})/), // 0111234567
-      message.match(/(\+27\d{9})/), // +27111234567
+      message.match(/(\+27\s*\d{2}\s*\d{3}\s*\d{4})/),
+      message.match(/(0\d{2}\s*\d{3}\s*\d{4})/),
+      message.match(/(\d{10})/),
+      message.match(/(\+27\d{9})/),
     ];
     
     for (const match of phoneMatches) {
@@ -407,8 +386,7 @@ function parseExtracted(extracted: any, message: string): Partial<Profile> {
       }
     }
   }
-  
-  // Extract business name (look for common patterns)
+
   if (!result.contact.name) {
     const businessPatterns = [
       /business name[:\s]+([^,\n.]+)/i,

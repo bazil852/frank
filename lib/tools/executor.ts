@@ -3,14 +3,6 @@ import { handleLenderSearchTool } from './lender-search';
 import { handleValidationTool } from './validation';
 import { ToolNames } from './index';
 
-/**
- * Execute a tool call from GPT-5
- * @param toolName Name of the tool to execute
- * @param args Arguments for the tool
- * @param userId User ID for context
- * @param sessionId Session ID for context
- * @returns Tool execution result
- */
 export async function executeToolCall(
   toolName: string,
   args: any,
@@ -25,20 +17,18 @@ export async function executeToolCall(
   });
 
   try {
-    // Route to appropriate handler based on tool name
+    
     switch (toolName) {
-      // Business Profile Tools
+      
       case ToolNames.GET_BUSINESS_PROFILE:
       case ToolNames.UPDATE_BUSINESS_PROFILE:
         return await handleBusinessProfileTool(toolName, args, userId);
 
-      // Lender Search Tools
       case ToolNames.SEARCH_LENDERS:
       case ToolNames.GET_LENDER_REQUIREMENTS:
       case ToolNames.CALCULATE_ELIGIBILITY:
         return await handleLenderSearchTool(toolName, args, userId);
 
-      // Validation Tools
       case ToolNames.VALIDATE_PROVINCE:
         return await handleValidationTool(toolName, args);
 
@@ -57,10 +47,7 @@ export async function executeToolCall(
   }
 }
 
-/**
- * Validate tool arguments before execution
- */
 export function validateToolArgs(toolName: string, args: any): boolean {
-  // Add validation logic here if needed
+  
   return true;
 }

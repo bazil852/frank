@@ -1,14 +1,12 @@
-import { serve } from "https://deno.land/std@0.168.0/http/server.ts"
+import { serve } from "https:
 import { corsHeaders } from "../_shared/cors.ts"
 
 serve(async (req) => {
-  // Handle CORS preflight requests
   if (req.method === 'OPTIONS') {
     return new Response('ok', { headers: corsHeaders })
   }
 
   try {
-    // Only allow POST requests
     if (req.method !== 'POST') {
       return new Response(
         JSON.stringify({ error: 'Method not allowed' }),
@@ -19,7 +17,6 @@ serve(async (req) => {
       )
     }
 
-    // Get OpenAI API key from environment
     const openaiApiKey = Deno.env.get('OPENAI_API_KEY')
     if (!openaiApiKey) {
       return new Response(
@@ -31,11 +28,9 @@ serve(async (req) => {
       )
     }
 
-    // Parse request body for optional configuration
     const body = await req.json()
     const { instructions = "", model = "gpt-5-realtime-preview-2024-10-01" } = body
 
-    // Default instructions for Frank
     const frankInstructions = instructions || `You are Frank, an AI-powered SME funding assistant that helps South African businesses find suitable financing providers.
 
 Your role is to:
@@ -54,8 +49,7 @@ Key guidelines:
 
     console.log('Creating OpenAI Realtime session with model:', model)
 
-    // Create session with OpenAI Realtime API
-    const response = await fetch('https://api.openai.com/v1/realtime/sessions', {
+    const response = await fetch('https:
       method: 'POST',
       headers: {
         'Authorization': `Bearer ${openaiApiKey}`,

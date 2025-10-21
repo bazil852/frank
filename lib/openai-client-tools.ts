@@ -2,7 +2,6 @@ import OpenAI from 'openai';
 import { allTools } from './tools';
 import { executeToolCall } from './tools/executor';
 
-// Initialize OpenAI client
 const openai = new OpenAI({
   apiKey: process.env.NEXT_PUBLIC_OPENAI_API_KEY || '',
   dangerouslyAllowBrowser: true
@@ -15,9 +14,7 @@ export interface ToolChatResponse {
 }
 
 export class FrankAITools {
-  /**
-   * System prompt with tool usage instructions
-   */
+  
   private static getSystemPromptWithTools(): string {
     return `You are Frank — SA funding matcher. Sharp, helpful, conversational.
 
@@ -37,7 +34,7 @@ When a user provides business information:
 **CRITICAL: When calling update_business_profile, you MUST pass the extracted data as arguments!**
 
 WRONG (don't do this):
-update_business_profile()  // ❌ No arguments - nothing saved!
+update_business_profile()  
 
 RIGHT (do this):
 update_business_profile({
@@ -45,14 +42,14 @@ update_business_profile({
   yearsTrading: 5,
   monthlyTurnover: 100000,
   amountRequested: 1000000
-})  // ✅ Arguments with extracted data
+})  
 
 **EXAMPLE:**
 User: "construction, 5 years trading, 100k turnover, need 1 million"
 
 Your actions:
 1. get_business_profile() → empty
-2. update_business_profile({industry: "Construction", yearsTrading: 5, monthlyTurnover: 100000, amountRequested: 1000000})  // ⚠️ MUST include the data!
+2. update_business_profile({industry: "Construction", yearsTrading: 5, monthlyTurnover: 100000, amountRequested: 1000000})  
 3. search_lenders(useCurrentProfile: true) → 8 lenders found
 4. **Write response:** "Great! I've found 8 lenders for your construction business. Let me show you the best matches:
    • Lulalend (R20k-R2m, 2-3 days)
@@ -87,9 +84,6 @@ Your actions:
 - **ALWAYS END WITH A TEXT MESSAGE TO THE USER**`;
   }
 
-  /**
-   * Chat with autonomous tool calling
-   */
   static async chat(
     message: string,
     chatHistory: Array<{ role: string; content: string }> = [],
@@ -98,14 +92,13 @@ Your actions:
   ): Promise<ToolChatResponse> {
     console.log('💬 FrankAI Tools Chat:', { message, userId, sessionId });
 
-    // Build conversation context
     let conversationContext: any[] = [
       ...chatHistory,
       { role: "user", content: message }
     ];
 
     let toolCallsMade = 0;
-    const maxIterations = 10; // Prevent infinite loops
+    const maxIterations = 10; 
     let iteration = 0;
 
     while (iteration < maxIterations) {
@@ -113,17 +106,15 @@ Your actions:
       console.log(`\n🔄 Iteration ${iteration}/${maxIterations}`);
 
       try {
-        // Call GPT-5 with tools - cast to any to avoid SDK type issues
-        // Note: store=true required for multi-turn tool conversations (to reference response items)
-        // Note: effort=high for complex extraction + multi-tool sequencing
+
         const response = await openai.responses.create({
           model: "gpt-5",
           reasoning: { effort: "high" },
           instructions: this.getSystemPromptWithTools(),
           input: conversationContext,
-          tools: allTools as any, // Type cast for SDK compatibility
+          tools: allTools as any, 
           max_output_tokens: 800,
-          store: true  // Required for tool calling loops
+          store: true  
         } as any);
 
         console.log('📤 Model response:', {
@@ -131,33 +122,27 @@ Your actions:
           types: response.output.map((item: any) => item.type)
         });
 
-        // Add response items to context, but filter out orphaned reasoning
-        // (reasoning items must be followed by function_call to be valid)
         const filteredOutput = response.output.filter((item: any, i: number, arr: any[]) => {
-          // Keep non-reasoning items
+          
           if (item.type !== 'reasoning') return true;
 
-          // Keep reasoning if next item is a function_call (paired reasoning)
           if (i + 1 < arr.length && arr[i + 1].type === 'function_call') return true;
 
           console.log('⚠️  Filtering out orphaned reasoning item');
-          return false; // Remove orphaned reasoning
+          return false; 
         });
 
         conversationContext = [...conversationContext, ...filteredOutput];
 
-        // Find function calls in the response
         const functionCalls = response.output.filter(
           (item: any) => item.type === 'function_call'
         );
 
         console.log(`🔧 Function calls found: ${functionCalls.length}`);
 
-        // If no function calls, check if we have a final message
         if (functionCalls.length === 0) {
           console.log("✅ No further tool calls — checking for final message.");
 
-          // Extract text from message items with output_text content
           const assistantMessages = response.output.filter((item: any) => item.type === 'message');
 
           const finalText = assistantMessages
@@ -170,7 +155,6 @@ Your actions:
             })
             .join('\n');
 
-          // If we have text, return it
           if (finalText) {
             console.log('💬 Final response extracted:', finalText.substring(0, 100));
 
@@ -181,18 +165,16 @@ Your actions:
             };
           }
 
-          // If no text (only reasoning), continue the loop
           console.log('⚠️  Only reasoning found, no message - continuing loop...');
         }
 
-        // Execute all function calls
         for (const call of functionCalls) {
           toolCallsMade++;
           const typedCall = call as any;
           console.log(`\n⚙️  Executing tool ${toolCallsMade}: ${typedCall.name}`);
 
           try {
-            // Parse arguments safely - handle empty strings
+            
             let args = {};
             if (typedCall.arguments && typedCall.arguments.trim() !== '') {
               try {
@@ -207,7 +189,6 @@ Your actions:
 
             console.log(`✅ Tool result:`, result);
 
-            // Add function result to context
             conversationContext.push({
               type: "function_call_output",
               call_id: typedCall.call_id,
@@ -216,7 +197,6 @@ Your actions:
           } catch (error) {
             console.error(`❌ Tool execution failed:`, error);
 
-            // Add error to context so model knows
             conversationContext.push({
               type: "function_call_output",
               call_id: typedCall.call_id,
@@ -228,11 +208,9 @@ Your actions:
           }
         }
 
-        // Continue loop to get model's next response
       } catch (error) {
         console.error('❌ Chat iteration error:', error);
 
-        // Return what we have so far
         return {
           summary: "I encountered an error processing your request. Please try again.",
           toolCallsMade,
@@ -241,7 +219,6 @@ Your actions:
       }
     }
 
-    // Max iterations reached
     console.warn('⚠️  Max iterations reached');
     return {
       summary: "I've processed your information. What else can I help with?",
@@ -250,9 +227,6 @@ Your actions:
     };
   }
 
-  /**
-   * Chat with streaming - yields progress updates as tools execute
-   */
   static async *chatStream(
     message: string,
     chatHistory: Array<{ role: string; content: string }> = [],
@@ -261,7 +235,6 @@ Your actions:
   ): AsyncGenerator<StreamEvent> {
     console.log('💬 FrankAI Tools Chat (Streaming):', { message, userId, sessionId });
 
-    // Build conversation context
     let conversationContext: any[] = [
       ...chatHistory,
       { role: "user", content: message }
@@ -276,13 +249,12 @@ Your actions:
       console.log(`\n🔄 Iteration ${iteration}/${maxIterations}`);
 
       try {
-        // Yield status update
+        
         yield {
           type: 'status',
           message: iteration === 1 ? 'Checking your profile...' : 'Processing...'
         };
 
-        // Call GPT-5 with streaming
         const stream = await openai.responses.create({
           model: "gpt-5",
           reasoning: { effort: "high" },
@@ -298,7 +270,6 @@ Your actions:
         let responseOutput: any[] = [];
         let functionCalls: any[] = [];
 
-        // Process streaming events
         for await (const event of stream as any) {
           if (event.type === 'response.output_item.added') {
             responseOutput.push(event.item);
@@ -306,7 +277,6 @@ Your actions:
             const delta = event.delta || '';
             currentText += delta;
 
-            // Stream text to client
             yield {
               type: 'text_delta',
               delta
@@ -323,30 +293,25 @@ Your actions:
           types: responseOutput.map((item: any) => item.type)
         });
 
-        // Add response items to context, but filter out orphaned reasoning
         const filteredOutput = responseOutput.filter((item: any, i: number, arr: any[]) => {
-          // Keep non-reasoning items
+          
           if (item.type !== 'reasoning') return true;
 
-          // Keep reasoning if next item is a function_call (paired reasoning)
           if (i + 1 < arr.length && arr[i + 1].type === 'function_call') return true;
 
           console.log('⚠️  Filtering out orphaned reasoning item');
-          return false; // Remove orphaned reasoning
+          return false; 
         });
 
         conversationContext = [...conversationContext, ...filteredOutput];
 
-        // Find function calls
         const calls = responseOutput.filter((item: any) => item.type === 'function_call');
 
         console.log(`🔧 Function calls found: ${calls.length}`);
 
-        // If no function calls, check if we have a final message
         if (calls.length === 0) {
           console.log("✅ No further tool calls — checking for final message.");
 
-          // If we already streamed text during this iteration, we're done
           if (currentText) {
             console.log('💬 Final response streamed:', currentText.substring(0, 100));
 
@@ -358,7 +323,6 @@ Your actions:
             return;
           }
 
-          // Otherwise, extract text from message items
           const assistantMessages = responseOutput.filter((item: any) => item.type === 'message');
 
           const finalText = assistantMessages
@@ -371,7 +335,6 @@ Your actions:
             })
             .join('\n');
 
-          // If we have text, stream it and complete
           if (finalText) {
             console.log('💬 Final response extracted:', finalText.substring(0, 100));
 
@@ -388,16 +351,13 @@ Your actions:
             return;
           }
 
-          // If no text (only reasoning), continue the loop
           console.log('⚠️  Only reasoning found, no message - continuing loop...');
         }
 
-        // Execute function calls
         for (const call of calls) {
           toolCallsMade++;
           const typedCall = call as any;
 
-          // Yield tool execution status
           yield {
             type: 'tool_call',
             toolName: typedCall.name,
@@ -407,7 +367,7 @@ Your actions:
           console.log(`\n⚙️  Executing tool ${toolCallsMade}: ${typedCall.name}`);
 
           try {
-            // Parse arguments safely
+            
             let args = {};
             if (typedCall.arguments && typedCall.arguments.trim() !== '') {
               try {
@@ -421,7 +381,6 @@ Your actions:
             const result = await executeToolCall(typedCall.name, args, userId, sessionId);
             console.log(`✅ Tool result:`, result);
 
-            // Add result to context
             conversationContext.push({
               type: "function_call_output",
               call_id: typedCall.call_id,
@@ -441,7 +400,6 @@ Your actions:
           }
         }
 
-        // Continue loop
       } catch (error) {
         console.error('❌ Chat iteration error:', error);
 
@@ -453,7 +411,6 @@ Your actions:
       }
     }
 
-    // Max iterations reached
     yield {
       type: 'done',
       toolCallsMade,
@@ -461,9 +418,6 @@ Your actions:
     };
   }
 
-  /**
-   * Simplified chat for when we don't need the full tool loop
-   */
   static async simpleChat(message: string): Promise<string> {
     try {
       const response = await openai.responses.create({
@@ -482,7 +436,6 @@ Your actions:
   }
 }
 
-// Stream event types
 export type StreamEvent =
   | { type: 'status'; message: string }
   | { type: 'text_delta'; delta: string }

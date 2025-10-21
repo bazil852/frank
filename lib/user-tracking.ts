@@ -18,12 +18,8 @@ interface UserSession {
 export class AnonymousUserTracker {
   private static readonly USER_ID_KEY = 'frank_anonymous_user_id';
   private static readonly SESSION_ID_KEY = 'frank_session_id';
-  private static readonly SESSION_TIMEOUT = 30 * 60 * 1000; // 30 minutes
+  private static readonly SESSION_TIMEOUT = 30 * 60 * 1000; 
 
-  /**
-   * Get or create anonymous user ID
-   * This persists across browser sessions
-   */
   static getUserId(): string {
     if (typeof window === 'undefined') return '';
     
@@ -37,10 +33,6 @@ export class AnonymousUserTracker {
     return userId;
   }
 
-  /**
-   * Get or create session ID
-   * New session created after 30 minutes of inactivity
-   */
   static getSessionId(): string {
     if (typeof window === 'undefined') return '';
     
@@ -51,7 +43,7 @@ export class AnonymousUserTracker {
       const { id, lastActivity } = JSON.parse(sessionData);
       
       if (now - lastActivity < this.SESSION_TIMEOUT) {
-        // Update last activity
+        
         sessionStorage.setItem(
           this.SESSION_ID_KEY,
           JSON.stringify({ id, lastActivity: now })
@@ -59,8 +51,7 @@ export class AnonymousUserTracker {
         return id;
       }
     }
-    
-    // Create new session
+
     const newSessionId = `session_${uuidv4()}`;
     sessionStorage.setItem(
       this.SESSION_ID_KEY,
@@ -70,10 +61,6 @@ export class AnonymousUserTracker {
     return newSessionId;
   }
 
-  /**
-   * Generate device fingerprint for additional identification
-   * Combines multiple browser characteristics
-   */
   static getDeviceFingerprint(): string {
     if (typeof window === 'undefined') return '';
     
@@ -87,8 +74,7 @@ export class AnonymousUserTracker {
       doNotTrack: navigator.doNotTrack,
       plugins: Array.from(navigator.plugins || []).map(p => p.name).join(','),
     };
-    
-    // Create a simple hash from the fingerprint
+
     const fingerprintString = JSON.stringify(fingerprint);
     let hash = 0;
     for (let i = 0; i < fingerprintString.length; i++) {
@@ -100,9 +86,6 @@ export class AnonymousUserTracker {
     return `fp_${Math.abs(hash).toString(36)}`;
   }
 
-  /**
-   * Get complete user session information
-   */
   static getUserSession(): UserSession {
     return {
       userId: this.getUserId(),
@@ -120,22 +103,12 @@ export class AnonymousUserTracker {
     };
   }
 
-  /**
-   * Track user activity/event
-   */
   static async trackEvent(eventName: string, eventData?: any) {
     const session = this.getUserSession();
-    
-    // You can send this to your Supabase database
-    // Tracking disabled for cleaner logs
-    
-    // Update last activity
-    this.getSessionId(); // This updates the last activity timestamp
+
+    this.getSessionId(); 
   }
 
-  /**
-   * Clear user data (for privacy/GDPR compliance)
-   */
   static clearUserData() {
     localStorage.removeItem(this.USER_ID_KEY);
     sessionStorage.removeItem(this.SESSION_ID_KEY);

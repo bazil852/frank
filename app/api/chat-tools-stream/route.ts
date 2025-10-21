@@ -81,14 +81,12 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Build conversation context similar to OpenAI demo
     const conversationItems: any[] = [
       { role: "developer", content: SYSTEM_PROMPT },
       ...chatHistory,
       { role: "user", content: message }
     ];
 
-    // Create readable stream
     const encoder = new TextEncoder();
     const stream = new ReadableStream({
       async start(controller) {
@@ -139,7 +137,7 @@ async function processConversation(
     console.log(`\n🔄 Iteration ${iteration}/${maxIterations}`);
 
     try {
-      // Call OpenAI with streaming
+      
       const events = await openai.responses.create({
         model: "gpt-5",
         input: conversationItems,
@@ -153,16 +151,14 @@ async function processConversation(
       let responseOutput: any[] = [];
       let hasFunctionCalls = false;
 
-      // Process streaming events
       for await (const event of events as any) {
-        // Send all events to client
+        
         const data = JSON.stringify({
           event: event.type,
           data: event,
         });
         controller.enqueue(encoder.encode(`data: ${data}\n\n`));
 
-        // Track response items
         if (event.type === 'response.output_item.added') {
           responseOutput.push(event.item);
           if (event.item?.type === 'function_call') {
@@ -186,7 +182,6 @@ async function processConversation(
         currentText: currentText.substring(0, 100)
       });
 
-      // Debug: log message items
       const messages = responseOutput.filter((item: any) => item.type === 'message');
       if (messages.length > 0) {
         console.log('📨 Message items found:', messages.length);
@@ -199,7 +194,6 @@ async function processConversation(
         });
       }
 
-      // Filter and add to context (remove orphaned reasoning)
       const filteredOutput = responseOutput.filter((item: any, i: number, arr: any[]) => {
         if (item.type !== 'reasoning') return true;
         if (i + 1 < arr.length && arr[i + 1].type === 'function_call') return true;
@@ -209,14 +203,11 @@ async function processConversation(
 
       conversationItems = [...conversationItems, ...filteredOutput];
 
-      // Find function calls
       const functionCalls = responseOutput.filter((item: any) => item.type === 'function_call');
 
-      // If no function calls, check if we have a response and we're done
       if (functionCalls.length === 0) {
         console.log('✅ No more function calls - checking for final message');
 
-        // If we streamed text during this iteration, we're done
         if (currentText && currentText.trim().length > 0) {
           console.log('💬 Text was streamed:', currentText.substring(0, 100));
           controller.enqueue(encoder.encode(`data: ${JSON.stringify({ event: 'done' })}\n\n`));
@@ -224,7 +215,6 @@ async function processConversation(
           return;
         }
 
-        // Otherwise try to extract from message items
         const assistantMessages = responseOutput.filter((item: any) => item.type === 'message');
         const extractedText = assistantMessages
           .map((msg: any) => {
@@ -238,7 +228,7 @@ async function processConversation(
 
         if (extractedText && extractedText.trim().length > 0) {
           console.log('💬 Extracted final text:', extractedText.substring(0, 100));
-          // Stream the extracted text
+          
           const textData = JSON.stringify({
             event: 'response.output_text.delta',
             data: { delta: extractedText }
@@ -252,9 +242,8 @@ async function processConversation(
         console.log('⚠️  No text found - continuing loop to prompt model for response...');
       }
 
-      // Execute function calls
       for (const call of functionCalls) {
-        const typedCall = call as any; // Type cast for SDK compatibility
+        const typedCall = call as any; 
         console.log(`\n⚙️  Executing tool: ${typedCall.name}`);
 
         try {
@@ -270,7 +259,6 @@ async function processConversation(
           const result = await executeToolCall(typedCall.name, args, userId, sessionId);
           console.log(`✅ Tool result:`, result);
 
-          // Add function result to context
           conversationItems.push({
             type: "function_call_output",
             call_id: typedCall.call_id,
@@ -289,14 +277,12 @@ async function processConversation(
         }
       }
 
-      // Continue to next iteration to get model's response to tool outputs
     } catch (error) {
       console.error('❌ Iteration error:', error);
       throw error;
     }
   }
 
-  // Max iterations reached
   console.warn('⚠️  Max iterations reached');
   controller.enqueue(encoder.encode(`data: ${JSON.stringify({ event: 'done' })}\n\n`));
   controller.close();

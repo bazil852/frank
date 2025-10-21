@@ -9,12 +9,11 @@ export async function getLendersFromDB(): Promise<Product[]> {
 
   if (error) {
     console.error('Error fetching lenders:', error);
-    // Fall back to static data if database is not available
+    
     const { PRODUCTS } = await import('./catalog');
     return PRODUCTS;
   }
 
-  // Transform database format to application format
   return data.map((lender) => ({
     id: lender.id,
     provider: lender.provider,

@@ -17,12 +17,12 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     setMounted(true);
-    // Check localStorage for saved theme preference
+    
     const savedTheme = localStorage.getItem('frank-theme') as Theme;
     if (savedTheme) {
       setTheme(savedTheme);
     } else {
-      // Check system preference
+      
       const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
       setTheme(prefersDark ? 'dark' : 'light');
     }
@@ -41,8 +41,7 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
       document.documentElement.classList.remove('dark');
       console.log('Removed dark class from html element');
     }
-    
-    // Debug: Check if class was applied
+
     console.log('Current html classes:', document.documentElement.classList.toString());
   }, [theme, mounted]);
 

@@ -3,12 +3,12 @@ export const REQUIREMENT_POLICY = {
   monthlyTurnover: "hard", 
   amountRequested: "flex",
   urgencyDays: "flex",
-  vatRegistered: "hard_or_none", // hard for lenders that require VAT; others ignore
+  vatRegistered: "hard_or_none", 
   province: "hard",
   saRegistered: "hard",
   saDirector: "hard",
   bankStatements: "hard",
-  collateralAcceptable: "refine" // affects which lenders rank higher
+  collateralAcceptable: "refine" 
 } as const;
 
 export const OPENING_SMALL_GROUP = `
@@ -52,7 +52,6 @@ export function announceDelta(prev:{q:number;n:number;u:number}|null, now:{q:num
   return null;
 }
 
-// Simplified delta helper for UI integration
 export function deltaLine(prev?: {q:number;n:number;u:number}, now?: {q:number;n:number;u:number}) {
   if (!prev || !now) return null;
   const dq = now.q - prev.q;

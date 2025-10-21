@@ -1,6 +1,4 @@
-/**
- * Format amounts properly - no more 2000k bullshit
- */
+
 export function formatAmount(amount: number | null | undefined): string {
   if (amount == null) return 'N/A';
   
@@ -15,9 +13,6 @@ export function formatAmount(amount: number | null | undefined): string {
   }
 }
 
-/**
- * Format speed ranges
- */
 export function formatSpeed(speedDays: [number, number]): string {
   if (speedDays[0] === speedDays[1]) {
     return `${speedDays[0]} day${speedDays[0] > 1 ? 's' : ''}`;
@@ -25,9 +20,6 @@ export function formatSpeed(speedDays: [number, number]): string {
   return `${speedDays[0]}-${speedDays[1]} days`;
 }
 
-/**
- * Format interest rates
- */
 export function formatRate(interestRate?: [number, number]): string {
   if (!interestRate) return '';
   if (interestRate[0] === interestRate[1]) {

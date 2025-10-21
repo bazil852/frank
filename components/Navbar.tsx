@@ -53,7 +53,7 @@ export default function Navbar({ className = '', onReset }: NavbarProps) {
             maxWidth: '100%'
           }}
         >
-          {/* Logo - Left edge on both mobile and desktop */}
+          {}
           <div className="flex items-center">
             <Link href="/" className="flex items-center">
               <Image 
@@ -67,7 +67,7 @@ export default function Navbar({ className = '', onReset }: NavbarProps) {
             </Link>
           </div>
 
-          {/* Desktop Navigation - Center */}
+          {}
           <div className="hidden md:flex items-center space-x-8 absolute left-1/2 transform -translate-x-1/2">
             {navItems.map((item) => (
               <Link
@@ -91,7 +91,7 @@ export default function Navbar({ className = '', onReset }: NavbarProps) {
             ))}
           </div>
 
-          {/* CTA Button and Reset - Desktop only, positioned at right */}
+          {}
           <div className="hidden md:flex items-center gap-3">
             <motion.button
               whileHover={{ scale: 1.02 }}
@@ -117,7 +117,7 @@ export default function Navbar({ className = '', onReset }: NavbarProps) {
             )}
           </div>
 
-          {/* Mobile Menu Button - Right side */}
+          {}
           <button
             onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)}
             className="md:hidden p-2 text-slate-600 hover:text-slate-900 transition-colors duration-200"
@@ -126,7 +126,7 @@ export default function Navbar({ className = '', onReset }: NavbarProps) {
           </button>
         </div>
 
-        {/* Mobile Navigation */}
+        {}
         {isMobileMenuOpen && (
           <motion.div
             initial={{ opacity: 0, height: 0 }}
@@ -156,7 +156,7 @@ export default function Navbar({ className = '', onReset }: NavbarProps) {
                 </Link>
               ))}
               
-              {/* Mobile CTA Button */}
+              {}
               <motion.button
                 whileTap={{ scale: 0.98 }}
                 className="w-full flex items-center justify-center gap-2 px-4 py-2 bg-slate-900 text-white rounded-lg font-medium hover:bg-slate-800 transition-all duration-200 mt-4 text-sm"

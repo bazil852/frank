@@ -13,8 +13,7 @@ export async function POST(req: NextRequest) {
         error: 'Query is required' 
       }, { status: 400 });
     }
-    
-    // Perform RAG retrieval
+
     const results = await queryPinecone(query, topK);
     const formattedKnowledge = formatRetrievedKnowledge(results);
     

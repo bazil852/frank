@@ -7,7 +7,6 @@ const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY || process.env.NEXT_PUBLIC_OPENAI_API_KEY,
 });
 
-// Allow model to be configurable via env var, with fallback to gpt-5
 const MODEL = process.env.OPENAI_MODEL || "gpt-5";
 
 console.log('🤖 OpenAI client initialized with model:', MODEL);
@@ -73,7 +72,6 @@ export async function POST(request: NextRequest) {
       hasApiKey: !!(process.env.OPENAI_API_KEY || process.env.NEXT_PUBLIC_OPENAI_API_KEY)
     });
 
-    // Check if OpenAI API key is configured
     if (!process.env.OPENAI_API_KEY && !process.env.NEXT_PUBLIC_OPENAI_API_KEY) {
       console.error('❌ OpenAI API key not configured');
       return NextResponse.json(
@@ -101,14 +99,12 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Build conversation context
     const conversationItems: any[] = [
       { role: "developer", content: SYSTEM_PROMPT },
       ...chatHistory,
       { role: "user", content: message }
     ];
 
-    // Process conversation with tool calling loop
     const result = await processConversation(conversationItems, userId, sessionId);
 
     console.log('✅ Chat Tools API response:', {
@@ -145,8 +141,8 @@ async function processConversation(
   conversationItems: any[],
   userId: string,
   sessionId: string,
-  maxIterations = 5, // Reduced from 10 to prevent timeouts
-  timeoutMs = 20000 // 20 second timeout for safety (Netlify has 26s limit on paid, 10s on free)
+  maxIterations = 5, 
+  timeoutMs = 20000 
 ): Promise<{ summary: string; toolCallsMade: number }> {
   const startTime = Date.now();
   let iteration = 0;
@@ -156,7 +152,6 @@ async function processConversation(
   while (iteration < maxIterations) {
     iteration++;
 
-    // Check if we're approaching timeout
     const elapsed = Date.now() - startTime;
     if (elapsed > timeoutMs) {
       console.warn(`⏱️  Timeout approaching (${elapsed}ms), returning current result`);
@@ -171,7 +166,6 @@ async function processConversation(
     try {
       console.log(`🔧 [Iteration ${iteration}] Calling OpenAI with ${conversationItems.length} items`);
 
-      // Call OpenAI without streaming
       const response = await openai.responses.create({
         model: MODEL,
         input: conversationItems,
@@ -193,7 +187,6 @@ async function processConversation(
         types: response.output?.map((item: any) => item.type)
       });
 
-      // Filter and add to context (remove orphaned reasoning)
       const filteredOutput = response.output.filter((item: any, i: number, arr: any[]) => {
         if (item.type !== 'reasoning') return true;
         if (i + 1 < arr.length && arr[i + 1].type === 'function_call') return true;
@@ -203,16 +196,13 @@ async function processConversation(
 
       conversationItems = [...conversationItems, ...filteredOutput];
 
-      // Find function calls
       const functionCalls = response.output.filter((item: any) => item.type === 'function_call');
 
       console.log(`🔧 Function calls found: ${functionCalls.length}`);
 
-      // If no function calls, extract final message
       if (functionCalls.length === 0) {
         console.log("✅ No further tool calls — extracting final message.");
 
-        // Extract text from message items
         const assistantMessages = response.output.filter((item: any) => item.type === 'message');
 
         finalMessage = assistantMessages
@@ -230,14 +220,12 @@ async function processConversation(
           return { summary: finalMessage, toolCallsMade };
         }
 
-        // If no text (only reasoning), continue loop
         console.log('⚠️  Only reasoning found, no message - continuing loop...');
       }
 
-      // Execute all function calls
       for (const call of functionCalls) {
         toolCallsMade++;
-        const typedCall = call as any; // Type cast for SDK compatibility
+        const typedCall = call as any; 
         console.log(`\n⚙️  Executing tool ${toolCallsMade}: ${typedCall.name}`);
 
         try {
@@ -253,7 +241,6 @@ async function processConversation(
           const result = await executeToolCall(typedCall.name, args, userId, sessionId);
           console.log(`✅ Tool result:`, result);
 
-          // Add function result to context
           conversationItems.push({
             type: "function_call_output",
             call_id: typedCall.call_id,
@@ -273,7 +260,6 @@ async function processConversation(
         }
       }
 
-      // Continue loop to get model's next response
     } catch (error) {
       console.error('❌ Chat iteration error:', error);
       console.error('❌ Iteration error details:', {
@@ -283,11 +269,10 @@ async function processConversation(
         conversationLength: conversationItems.length
       });
 
-      throw error; // Re-throw to be caught by outer try-catch for better error reporting
+      throw error; 
     }
   }
 
-  // Max iterations reached
   console.warn('⚠️  Max iterations reached');
   return {
     summary: finalMessage || "I've processed your information. What else can I help with?",

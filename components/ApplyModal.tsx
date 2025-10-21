@@ -47,8 +47,7 @@ export default function ApplyModal({ isOpen, onClose, product, profile }: ApplyM
       
       const data = await response.json();
       setApplicationId(data.id);
-      
-      // Track application in database
+
       await DatabaseTracker.trackApplication({
         lenderId: product.id,
         profileData: profile,

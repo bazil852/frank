@@ -6,8 +6,7 @@ import { chunkDocument } from '@/lib/chunker';
 export async function POST(req: NextRequest) {
   try {
     console.log('🔄 Starting lender data migration from Supabase to Pinecone...');
-    
-    // Fetch all lenders from Supabase
+
     const lenders = await getLendersFromDB();
     console.log(`📊 Found ${lenders.length} lenders in Supabase`);
     
@@ -17,12 +16,10 @@ export async function POST(req: NextRequest) {
         message: 'No lenders found in Supabase database'
       });
     }
-    
-    // Convert each lender to structured text for embedding
+
     const allChunks = [];
-    
+
     for (const lender of lenders) {
-      // Create comprehensive lender description
       const lenderDescription = [
         `# ${lender.provider} - ${lender.productType}`,
         '',
@@ -50,8 +47,7 @@ export async function POST(req: NextRequest) {
         '## Summary',
         `${lender.provider} offers ${lender.productType.toLowerCase()} funding from R${(lender.amountMin / 1000).toFixed(0)}k to R${(lender.amountMax / 1000).toFixed(0)}k for businesses trading for ${lender.minYears}+ years with R${(lender.minMonthlyTurnover / 1000).toFixed(0)}k+ monthly turnover. Funding available in ${lender.speedDays[0]}-${lender.speedDays[1]} days.`
       ].filter(line => line !== '').join('\n');
-      
-      // Create chunks for this lender
+
       const chunks = chunkDocument(
         lenderDescription,
         {
@@ -70,7 +66,7 @@ export async function POST(req: NextRequest) {
           collateralRequired: lender.collateralRequired || false
         },
         {
-          chunkSize: 1500, // Smaller chunks for lender data
+          chunkSize: 1500,
           overlap: 150,
           preserveSentences: true
         }
@@ -81,8 +77,7 @@ export async function POST(req: NextRequest) {
     }
     
     console.log(`📦 Total chunks created: ${allChunks.length}`);
-    
-    // Upload to Pinecone
+
     console.log('⬆️ Uploading chunks to Pinecone...');
     await upsertChunks(allChunks);
     
@@ -109,6 +104,6 @@ export async function POST(req: NextRequest) {
 export async function GET(req: NextRequest) {
   return NextResponse.json({
     message: 'POST to this endpoint to migrate lender data from Supabase to Pinecone',
-    usage: 'curl -X POST http://localhost:3001/api/migrate-lenders'
+    usage: 'curl -X POST http:
   });
 }
