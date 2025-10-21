@@ -145,15 +145,28 @@ async function processConversation(
   conversationItems: any[],
   userId: string,
   sessionId: string,
-  maxIterations = 10
+  maxIterations = 5, // Reduced from 10 to prevent timeouts
+  timeoutMs = 20000 // 20 second timeout for safety (Netlify has 26s limit on paid, 10s on free)
 ): Promise<{ summary: string; toolCallsMade: number }> {
+  const startTime = Date.now();
   let iteration = 0;
   let toolCallsMade = 0;
   let finalMessage = '';
 
   while (iteration < maxIterations) {
     iteration++;
-    console.log(`\n🔄 Iteration ${iteration}/${maxIterations}`);
+
+    // Check if we're approaching timeout
+    const elapsed = Date.now() - startTime;
+    if (elapsed > timeoutMs) {
+      console.warn(`⏱️  Timeout approaching (${elapsed}ms), returning current result`);
+      return {
+        summary: finalMessage || "I've processed your information so far. What else can I help with?",
+        toolCallsMade
+      };
+    }
+
+    console.log(`\n🔄 Iteration ${iteration}/${maxIterations} (${elapsed}ms elapsed)`);
 
     try {
       console.log(`🔧 [Iteration ${iteration}] Calling OpenAI with ${conversationItems.length} items`);
